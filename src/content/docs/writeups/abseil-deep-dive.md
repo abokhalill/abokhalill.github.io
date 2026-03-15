@@ -72,7 +72,7 @@ std::atomic<bool> is_idle;    // Has thread become idle yet?
 
 `ticker` is incremented on every mutex acquisition by the owning thread. `wait_start` and `is_idle` are written by other threads during signaling. When thread A signals thread B's semaphore, A writes to B's `ThreadIdentity`. If B is simultaneously updating its own `ticker`, the shared cache line ping-pongs between cores.
 
-Here's the thing though. The Abseil authors knew. That comment above the fields — "the only exception is that these are read by a ticker thread as a hint" — is the hardware trade-off documented in plain English. This is not a bug anyone missed. It's a deliberate cost made visible only if you compute the byte offsets manually.
+Here's the thing though. The Abseil authors knew. That comment above the fields; "the only exception is that these are read by a ticker thread as a hint", is the hardware trade off documented in plain English. This is not a bug anyone missed. It's a deliberate cost made visible only if you compute the byte offsets manually.
 
 So in a way, while it didn't exactly end in a 'gotcha', the Abseil authors' comments validate that the tool pointed at something not so trivial at first glance. That's exactly what lshaz does. The struct is already 352 bytes, reordering `ticker` onto its own line costs zero additional memory. Well played.
 
