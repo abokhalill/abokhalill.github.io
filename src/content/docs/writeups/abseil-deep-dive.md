@@ -97,9 +97,3 @@ One global, every mutex operation, one cache line. The struct is already aligned
 If we had to flatten everything onto one sentence, it's that we believe lshaz is a genuine tool which benefits developers, engineers and traders alike. At the time of this writing, the tool has already been benchmarked and tested against other industrial OSS such as Redis, PostgreSQL, and the entire LLVM monorepo, with significant findings across all 3 codebases. Those write-ups are coming.
 
 The tool's full source code can be found at https://github.com/abokhalill/lshaz. Supports both C and C++. Try it on your own project and let us know!
-
-## Conclusion
-
-If we had to flatten everything onto one sentence, it's that we believe lshaz is a genuine tool which benefits developers, engineers and traders alike. At the time of this writing, the tool has already been benchmarked and tested against other industrial OSS such as Redis, PostgreSQL, and the entire LLVM monorepo, with significant findings across all 3 codebases. Those write-ups are coming.
-
-The tool's full source code can be found at https://github.com/abokhalill/lshaz. Supports both C and C++. Try it on your own project and let us know!
