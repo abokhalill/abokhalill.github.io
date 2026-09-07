@@ -23,19 +23,6 @@ const minutes = Math.max(1, Math.round(entry.body!.trim().split(/\s+/).length / 
 			</p>
 			<h1 class="head__title">{entry.data.title}</h1>
 			<p class="head__dek">{entry.data.dek}</p>
-
-			<dl class="facts">
-				<dt>Author</dt>
-				<dd class="facts__author">Yousef Mahmoud</dd>
-				{
-					entry.data.facts.map(([term, value]) => (
-						<>
-							<dt>{term}</dt>
-							<dd set:html={value} />
-						</>
-					))
-				}
-			</dl>
 		</header>
 
 		<div class="prose">

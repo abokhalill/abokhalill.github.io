@@ -28,13 +28,11 @@ const writeups = (await getCollection('writeups', ({ data }) => !data.draft)).so
 					<a class="entry__title" href={`${base}${w.id}/`}>
 						{w.data.title}
 					</a>
-					{w.data.result && <p class="entry__result">{w.data.result}</p>}
+					<p class="entry__dek">{w.data.dek}</p>
 				</li>
 			))
 		}
 	</ul>
-
-	<p class="pending"><b>In progress</b>&nbsp;&nbsp;Redis · PostgreSQL · the LLVM monorepo</p>
 
 	<h2 class="label label--verbatim"><span>lshaz</span></h2>
 	<p class="about">
@@ -46,7 +44,6 @@ const writeups = (await getCollection('writeups', ({ data }) => !data.draft)).so
 	</p>
 
 	<footer class="colophon">
-		<p>No JavaScript, no analytics, no cookies.</p>
 		<p><a href={`${base}rss.xml`}>RSS</a> · <a href="https://github.com/abokhalill">GitHub</a></p>
 	</footer>
 </Base>

@@ -153,9 +153,14 @@ body {
 	color: var(--hazard);
 }
 
+/* Set above the rest of the masthead. On a site whose argument is the author's
+   competence, the author's name should not be the quietest thing on the page —
+   it was previously smaller than the tagline underneath it. */
 .masthead__name {
 	color: var(--ink) !important;
 	font-weight: 500;
+	font-size: 0.9375rem;
+	letter-spacing: 0.02em;
 }
 
 /* ---------- Links -------------------------------------------------------- */
@@ -188,8 +193,8 @@ a:focus-visible {
 /* Deliberately quieter than the entry titles below it. The titles are the
    argument; this is only a frame around them. */
 .standfirst {
-	margin: 2.75rem 0 0;
-	font-size: 1.0625rem;
+	margin: 2.5rem 0 0;
+	font-size: 1rem;
 	line-height: 1.55;
 	color: var(--ink-3);
 	text-wrap: pretty;
@@ -243,6 +248,13 @@ a:focus-visible {
 	position: relative;
 }
 
+/* The next section opens with its own ruled label, so a closing rule here just
+   leaves an empty row that reads as a missing entry. */
+.index > li:last-child {
+	border-bottom: 0;
+	padding-bottom: 0;
+}
+
 .entry__date {
 	position: absolute;
 	left: calc(var(--gutter) * -1);
@@ -288,26 +300,15 @@ a:focus-visible {
 	color: var(--ink);
 }
 
-.entry__result {
-	margin: 0.6rem 0 0;
-	font-family: var(--mono);
-	font-size: 0.75rem;
+/* The entry's own sentence, not a summary of its results. A reader deciding
+   whether to open this needs to know what it is about — "18 × FL002" tells them
+   nothing until they have read the thing that defines FL002. */
+.entry__dek {
+	margin: 0.55rem 0 0;
+	font-size: 0.9375rem;
 	line-height: 1.55;
 	color: var(--ink-3);
-	font-variant-numeric: tabular-nums lining-nums;
-}
-
-.pending {
-	margin: 1.25rem 0 0;
-	font-family: var(--mono);
-	font-size: 0.75rem;
-	line-height: 1.6;
-	color: var(--ink-3);
-}
-
-.pending b {
-	font-weight: 500;
-	color: var(--ink-2);
+	text-wrap: pretty;
 }
 
 .about {
@@ -360,40 +361,6 @@ a:focus-visible {
 	text-wrap: pretty;
 }
 
-/* The provenance slab. Who is claiming this, against what, with what result —
-   established before the argument starts. The byline lives here rather than
-   floating above it: one metadata block, no orphan lines. */
-.facts {
-	margin: 2.25rem 0 0;
-	padding: 1rem 0 0;
-	border-top: 1px solid var(--rule-2);
-	display: grid;
-	grid-template-columns: 8.5rem minmax(0, 1fr);
-	gap: 0.4rem 1rem;
-	font-family: var(--mono);
-	font-size: 0.75rem;
-	line-height: 1.5;
-	font-variant-numeric: tabular-nums lining-nums;
-}
-
-.facts dt {
-	color: var(--ink-3);
-	letter-spacing: 0.07em;
-	text-transform: uppercase;
-	font-size: 0.6875rem;
-	padding-top: 0.06em;
-}
-
-.facts dd {
-	margin: 0;
-	color: var(--ink-2);
-}
-
-.facts__author {
-	color: var(--ink) !important;
-	font-weight: 500;
-}
-
 /* ---------- Prose -------------------------------------------------------- */
 
 .prose {
@@ -431,17 +398,17 @@ a:focus-visible {
 	content: counter(section, decimal-leading-zero);
 	position: absolute;
 	left: calc(var(--gutter) * -1);
-	/* Optically centred in the heading's first line box rather than sat on its
-	   baseline — a small numeral hung off a large heading reads better centred. */
-	top: 0.52rem;
+	/* Sat on the heading's own baseline, so the numeral and the words it indexes
+	   read as one line rather than as a heading with a sticker beside it. */
+	top: 0.08rem;
 	width: calc(var(--gutter) - 1.1rem);
 	text-align: right;
 	font-family: var(--mono);
-	font-size: 0.6875rem;
-	font-weight: 500;
+	font-size: 1.5rem;
+	font-weight: 400;
 	line-height: 1;
-	letter-spacing: 0.06em;
-	color: var(--ink-3);
+	letter-spacing: -0.02em;
+	color: var(--hazard);
 	font-variant-numeric: tabular-nums lining-nums;
 }
 
@@ -644,15 +611,6 @@ figcaption b {
 
 	.head__title {
 		font-size: 1.75rem;
-	}
-
-	.facts {
-		grid-template-columns: 1fr;
-		gap: 0.15rem;
-	}
-
-	.facts dd {
-		margin-bottom: 0.55rem;
 	}
 
 	.prose pre.astro-code {

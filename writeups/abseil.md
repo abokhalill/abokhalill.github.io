@@ -2,14 +2,7 @@
 title: "We ran lshaz on Abseil. Here's what compile-time microarchitectural analysis actually finds in production C++."
 dek: 'lshaz is a Clang/LLVM-based static analysis tool that detects microarchitectural latency hazards. That includes false sharing, atomic contention, cache line geometry problems. All at compile time, before code ships.'
 date: 2026-03-15
-result: '157 translation units · 0 failures · 352 diagnostics · 18 × FL002 at 100% precision'
 image: og-abseil.png
-facts:
-  - ['Target', 'abseil-cpp']
-  - ['Scan', '157 translation units, 0 failures']
-  - ['Diagnostics', '352']
-  - ['False sharing', '18 × FL002 — 100% precision at the critical tier']
-  - ['Tool', '<a href="https://github.com/abokhalill/lshaz">github.com/abokhalill/lshaz</a> · LLVM/Clang 18']
 ---
 
 One thing you and I can agree on: no software system is perfect on all aspects. In our unfortunate case, we discuss performance. Whether it's a naive struct spanning multiple cache lines, false sharing, an overly strong memory ordering being expensive for no beneficial reason, an unfriendly NUMA topology, you name it. We've all seen it. Okay maybe not all but these are generally NOT what you want in a latency sensitive pipeline.

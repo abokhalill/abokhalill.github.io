@@ -12,10 +12,6 @@ const writeups = defineCollection({
 		/** The standfirst. One sentence, italic, sits under the title. */
 		dek: z.string(),
 		date: z.coerce.date(),
-		/** Provenance slab under the byline. Order is preserved. */
-		facts: z.array(z.tuple([z.string(), z.string()])).default([]),
-		/** Shown on the index under the title — the result, in one line. */
-		result: z.string().optional(),
 		/** Share card in public/. Falls back to the site-wide card. */
 		image: z.string().optional(),
 		draft: z.boolean().default(false),
