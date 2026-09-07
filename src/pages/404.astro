@@ -4,6 +4,8 @@ const base = import.meta.env.BASE_URL;
 ---
 
 <Base title="404 — Yousef Mahmoud" description="Not found.">
-	<p class="standfirst">404 — nothing at this address.</p>
-	<p class="about"><a href={base}>← All writeups</a></p>
+	<div class="intro"><p>404 — nothing at this address.</p></div>
+	<Fragment slot="footer">
+		<p><a href={base}>← All writeups</a></p>
+	</Fragment>
 </Base>

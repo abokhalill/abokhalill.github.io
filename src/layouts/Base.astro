@@ -50,6 +50,13 @@ const ogImage = new URL(`${base}${image}`, Astro.site);
 	<body>
 		<div class="frame">
 			<header class="masthead">
+				{/*
+				  Kept on the home page even though the intro names him again two
+				  lines down. Dropping it was tried: it leaves the top-left corner
+				  unanchored and the masthead rule with nothing above half of it,
+				  which reads as a failed load rather than as restraint. A small
+				  letterhead above a spoken greeting is how a letter works anyway.
+				*/}
 				{
 					home ? (
 						<span class="masthead__name">Yousef Mahmoud</span>
@@ -61,8 +68,15 @@ const ogImage = new URL(`${base}${image}`, Astro.site);
 				}
 				<a class="masthead__link" href="https://github.com/abokhalill">github.com/abokhalill</a>
 			</header>
+			{/*
+			  The body grows to fill whatever height is left, which does two things
+			  at once on a short page: the axis reaches the bottom of the viewport
+			  instead of stopping in mid-air and pointing at the emptiness below it,
+			  and the colophon sits at the foot rather than leaving a dead gap.
+			*/}
 			<div class="column">
-				<slot />
+				<div class="column__body"><slot /></div>
+				<footer class="colophon"><slot name="footer" /></footer>
 			</div>
 		</div>
 	</body>

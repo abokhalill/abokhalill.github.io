@@ -13,9 +13,13 @@ const writeups = (await getCollection('writeups', ({ data }) => !data.draft)).so
 <Base
 	home
 	title="Yousef Mahmoud — technical writeups"
-	description="Technical deep dives and systems engineering writeups."
+	description="Writing on compiler internals, cache geometry, and the hardware costs that are invisible in C and C++ source."
 >
-	<p class="standfirst">Technical deep dives and systems engineering writeups.</p>
+	<div class="intro">
+		<p>
+			Hello. My name is Yousef Mahmoud and I am a systems engineer. I write things here occasionally.
+		</p>
+	</div>
 
 	<h2 class="label"><span>Writeups</span></h2>
 	<ul class="index">
@@ -28,22 +32,33 @@ const writeups = (await getCollection('writeups', ({ data }) => !data.draft)).so
 					<a class="entry__title" href={`${base}${w.id}/`}>
 						{w.data.title}
 					</a>
-					<p class="entry__dek">{w.data.dek}</p>
 				</li>
 			))
 		}
 	</ul>
 
-	<h2 class="label label--verbatim"><span>lshaz</span></h2>
-	<p class="about">
-		Compile-time static analysis for false sharing, atomic contention, and cache-line geometry hazards in
-		C++.
-	</p>
-	<p class="about about--meta">
-		<a href="https://github.com/abokhalill/lshaz">github.com/abokhalill/lshaz</a>
-	</p>
+	{/*
+	  Software is a section, the same as Writeups — lshaz is an entry inside it,
+	  not a heading of its own. Previously both sat at the same weight in the
+	  gutter, which made the tool read as metadata attached to the post above it.
 
-	<footer class="colophon">
+	  These rows carry a gloss where the writeups do not: a title like "We ran
+	  lshaz on Abseil…" is already a sentence, but the name "lshaz" tells a reader
+	  nothing on its own.
+	*/}
+	<h2 class="label label--sub"><span>Software</span></h2>
+	<ul class="index index--sub">
+		<li>
+			<span class="entry__date">C/C++</span>
+			<a class="entry__title entry__title--sm" href="https://github.com/abokhalill/lshaz">lshaz</a>
+			<p class="entry__gloss">
+				Compile-time static analysis for false sharing, atomic contention, and cache-line geometry
+				hazards in C++.
+			</p>
+		</li>
+	</ul>
+
+	<Fragment slot="footer">
 		<p><a href={`${base}rss.xml`}>RSS</a> · <a href="https://github.com/abokhalill">GitHub</a></p>
-	</footer>
+	</Fragment>
 </Base>
