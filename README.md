@@ -1,3 +1,3 @@
-# lshaz
+# abokhalill.github.io
 
-Technical writeups by Yousef Mahmoud.
+Technical writeups by me.

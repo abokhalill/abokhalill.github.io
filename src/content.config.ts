@@ -1,7 +1,25 @@
-import { defineCollection } from 'astro:content';
-import { docsLoader } from '@astrojs/starlight/loaders';
-import { docsSchema } from '@astrojs/starlight/schema';
+import { defineCollection, z } from 'astro:content';
+import { glob } from 'astro/loaders';
 
-export const collections = {
-	docs: defineCollection({ loader: docsLoader(), schema: docsSchema() }),
-};
+const writeups = defineCollection({
+	// Top level, not src/content/writeups. Astro 4 required collections to live
+	// under src/content/; the Astro 5 loader takes any path, so those two
+	// directories were carrying no meaning. The writing is what this repo is for
+	// — it sits at the front door.
+	loader: glob({ base: './writeups', pattern: '**/*.md' }),
+	schema: z.object({
+		title: z.string(),
+		/** The standfirst. One sentence, italic, sits under the title. */
+		dek: z.string(),
+		date: z.coerce.date(),
+		/** Provenance slab under the byline. Order is preserved. */
+		facts: z.array(z.tuple([z.string(), z.string()])).default([]),
+		/** Shown on the index under the title — the result, in one line. */
+		result: z.string().optional(),
+		/** Share card in public/. Falls back to the site-wide card. */
+		image: z.string().optional(),
+		draft: z.boolean().default(false),
+	}),
+});
+
+export const collections = { writeups };

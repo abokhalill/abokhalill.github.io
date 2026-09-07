@@ -1,0 +1,713 @@
+/* =============================================================================
+   A measured document.
+
+   The subject of this writing is what goes wrong when nobody measures: a struct
+   whose most expensive property — which fields share a cache line — is invisible
+   in its own source. So this site leaves its measuring apparatus visible. A
+   hairline runs the height of every page; section indices hang on it in the
+   gutter; listings carry their real source paths. Nothing floats.
+
+   One serif for argument, one mono for evidence, metadata and every number.
+   No sans-serif anywhere: sans is the voice of interface chrome, and this is a
+   document, not an interface. Light ground, because dark hides typographic
+   sloppiness by flattening it. No motion, because the subject is latency.
+   ========================================================================== */
+
+/* ---------- Faces -------------------------------------------------------- */
+
+@font-face {
+	font-family: 'Source Serif 4';
+	src: url('../fonts/source-serif-4-var.woff2') format('woff2-variations');
+	font-weight: 400 700;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'Source Serif 4';
+	src: url('../fonts/source-serif-4-var-italic.woff2') format('woff2-variations');
+	font-weight: 400 700;
+	font-style: italic;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'Plex Mono';
+	src: url('../fonts/plex-mono-400.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: 'Plex Mono';
+	src: url('../fonts/plex-mono-500.woff2') format('woff2');
+	font-weight: 500;
+	font-style: normal;
+	font-display: swap;
+}
+
+/* ---------- Constants ---------------------------------------------------- */
+
+:root {
+	--serif: 'Source Serif 4', Charter, 'Bitstream Charter', Georgia, serif;
+	--mono: 'Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+	/* Measure is ~64 characters at the body size. Exhibits get more room than
+	   argument does — evidence is allowed to break the column. */
+	--measure: 34rem;
+	--measure-wide: 40rem;
+	/* Wide enough that a full ISO date sits on one line in the gutter. */
+	--gutter: 5.75rem;
+
+	--paper: #faf9f6;
+	--paper-sunk: #f4f2ec;
+	--ink: #14130f;
+	--ink-2: #3a362d;
+	--ink-3: #6f6a5d;
+	--rule: #e4e1d8;
+	--rule-2: #c9c5b8;
+	/* The only colour on the site. Reserved for hazards and for the moment a
+	   link becomes live under the cursor. Never used for delight. */
+	--hazard: #a63a1c;
+}
+
+/* ---------- Ground ------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	background: var(--paper);
+	-webkit-text-size-adjust: 100%;
+}
+
+body {
+	margin: 0;
+	padding: 0 1.5rem 6rem;
+	font-family: var(--serif);
+	font-optical-sizing: auto;
+	font-size: 1.1875rem;
+	line-height: 1.62;
+	color: var(--ink-2);
+	/* Lining, not old-style. Old-style figures blend numbers into the sentence;
+	   this essay's numbers are its evidence and should sit slightly proud. */
+	font-variant-numeric: lining-nums;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+}
+
+::selection {
+	background: #e8ddd4;
+	color: var(--ink);
+}
+
+/* The frame centres the measure. The gutter hangs into the left margin as
+   apparatus — it must never push the reading column off axis. */
+.frame {
+	max-width: var(--measure);
+	margin-inline: auto;
+	position: relative;
+}
+
+/* The axis, drawn as the column's own left edge so it begins exactly where the
+   masthead rule ends. The two meet at a corner: the document has a frame, not
+   a decorative line floating beside it. */
+.column {
+	/* flow-root, so a child's top margin can't collapse through and leave the
+	   axis starting a few rem below the masthead rule it should meet. */
+	display: flow-root;
+	margin-left: calc(var(--gutter) * -1);
+	padding-left: var(--gutter);
+	border-left: 1px solid var(--rule);
+}
+
+/* ---------- Masthead ----------------------------------------------------- */
+
+.masthead {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 1.5rem;
+	margin-left: calc(var(--gutter) * -1);
+	padding: 2.25rem 0 0.7rem var(--gutter);
+	border-bottom: 1px solid var(--rule-2);
+	font-family: var(--mono);
+	font-size: 0.75rem;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+}
+
+/* A URL is not a shouted word. */
+.masthead__link {
+	text-transform: none;
+	letter-spacing: 0.01em;
+}
+
+.masthead a {
+	color: var(--ink-3);
+	text-decoration: none;
+}
+
+.masthead a:hover {
+	color: var(--hazard);
+}
+
+.masthead__name {
+	color: var(--ink) !important;
+	font-weight: 500;
+}
+
+/* ---------- Links -------------------------------------------------------- */
+
+/* Links are ink — no colour, so the one accent on the site always means "live".
+   That puts the whole affordance on the underline, which therefore has to be
+   genuinely visible: at --rule-2 it measured 1.64:1 against the page, which for
+   a reader with low vision is no link at all. --ink-3 is 5.12:1 and still quiet. */
+a {
+	color: inherit;
+	text-decoration: underline;
+	text-decoration-thickness: 1px;
+	text-decoration-color: var(--ink-3);
+	text-underline-offset: 0.18em;
+	transition: text-decoration-color 90ms linear;
+}
+
+a:hover {
+	text-decoration-color: var(--hazard);
+}
+
+a:focus-visible {
+	outline: 2px solid var(--hazard);
+	outline-offset: 3px;
+	text-decoration-color: var(--hazard);
+}
+
+/* ---------- Index -------------------------------------------------------- */
+
+/* Deliberately quieter than the entry titles below it. The titles are the
+   argument; this is only a frame around them. */
+.standfirst {
+	margin: 2.75rem 0 0;
+	font-size: 1.0625rem;
+	line-height: 1.55;
+	color: var(--ink-3);
+	text-wrap: pretty;
+}
+
+/* Section heads hang in the gutter, the way section numbers do on an essay, and
+   leave only their rule crossing the column. That is what the gutter is for —
+   it holds whatever identifies the row beside it, whether that's a date, an
+   index, or a name — and it means the index and the essays read as one system
+   rather than two pages that happen to share a typeface. */
+.label {
+	position: relative;
+	margin: 3.25rem 0 0;
+	padding-bottom: 0.55rem;
+	border-bottom: 1px solid var(--rule-2);
+	font-size: 0;
+}
+
+.label span {
+	position: absolute;
+	bottom: 0.42rem;
+	left: calc(var(--gutter) * -1);
+	width: calc(var(--gutter) - 1.1rem);
+	text-align: right;
+	white-space: nowrap;
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	line-height: 1;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+}
+
+/* For labels that are somebody's name. `lshaz` is written lowercase everywhere
+   in the writing; the label device doesn't get to rename it. */
+.label--verbatim span {
+	text-transform: none;
+	letter-spacing: 0.05em;
+}
+
+.index {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.index > li {
+	border-bottom: 1px solid var(--rule);
+	padding: 1.5rem 0 1.6rem;
+	position: relative;
+}
+
+.entry__date {
+	position: absolute;
+	left: calc(var(--gutter) * -1);
+	top: 1.9rem;
+	width: calc(var(--gutter) - 1.1rem);
+	text-align: right;
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	line-height: 1;
+	letter-spacing: 0.02em;
+	color: var(--ink-3);
+	font-variant-numeric: tabular-nums lining-nums;
+	white-space: nowrap;
+	transition: color 90ms linear;
+}
+
+.entry__title {
+	display: block;
+	margin: 0;
+	font-size: 1.3125rem;
+	font-weight: 600;
+	line-height: 1.3;
+	letter-spacing: -0.011em;
+	color: var(--ink);
+	text-wrap: pretty;
+	/* No resting underline. A persistent one was tried and looked worse than the
+	   problem it solved — three lines of ruled serif headline reads as a defect,
+	   not an affordance. The accessibility requirement is met without it: this is
+	   a real <a>, so assistive tech announces it as a link regardless, and
+	   keyboard users get the focus ring below. Sighted mouse users get the whole
+	   row responding on hover. */
+	text-decoration-color: transparent;
+}
+
+/* The whole row is the hover target, and the date darkens with the title, so the
+   signal is "this entire entry is live" rather than "these particular words are". */
+.index > li:hover .entry__title,
+.entry__title:focus-visible {
+	text-decoration-color: var(--hazard);
+}
+
+.index > li:hover .entry__date {
+	color: var(--ink);
+}
+
+.entry__result {
+	margin: 0.6rem 0 0;
+	font-family: var(--mono);
+	font-size: 0.75rem;
+	line-height: 1.55;
+	color: var(--ink-3);
+	font-variant-numeric: tabular-nums lining-nums;
+}
+
+.pending {
+	margin: 1.25rem 0 0;
+	font-family: var(--mono);
+	font-size: 0.75rem;
+	line-height: 1.6;
+	color: var(--ink-3);
+}
+
+.pending b {
+	font-weight: 500;
+	color: var(--ink-2);
+}
+
+.about {
+	margin: 1.5rem 0 0;
+	font-size: 1rem;
+	line-height: 1.6;
+	color: var(--ink-2);
+}
+
+.about--meta {
+	margin-top: 0.75rem;
+	font-family: var(--mono);
+	font-size: 0.75rem;
+	color: var(--ink-3);
+}
+
+/* ---------- Essay masthead ----------------------------------------------- */
+
+.head {
+	padding: 3.25rem 0 0;
+}
+
+.head__kicker {
+	margin: 0 0 1.5rem;
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.11em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+	font-variant-numeric: tabular-nums lining-nums;
+}
+
+.head__title {
+	margin: 0;
+	font-size: 2.125rem;
+	font-weight: 600;
+	line-height: 1.16;
+	letter-spacing: -0.019em;
+	color: var(--ink);
+	text-wrap: pretty;
+}
+
+.head__dek {
+	margin: 1.15rem 0 0;
+	font-size: 1.0625rem;
+	font-style: italic;
+	line-height: 1.52;
+	color: var(--ink-2);
+	text-wrap: pretty;
+}
+
+/* The provenance slab. Who is claiming this, against what, with what result —
+   established before the argument starts. The byline lives here rather than
+   floating above it: one metadata block, no orphan lines. */
+.facts {
+	margin: 2.25rem 0 0;
+	padding: 1rem 0 0;
+	border-top: 1px solid var(--rule-2);
+	display: grid;
+	grid-template-columns: 8.5rem minmax(0, 1fr);
+	gap: 0.4rem 1rem;
+	font-family: var(--mono);
+	font-size: 0.75rem;
+	line-height: 1.5;
+	font-variant-numeric: tabular-nums lining-nums;
+}
+
+.facts dt {
+	color: var(--ink-3);
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	font-size: 0.6875rem;
+	padding-top: 0.06em;
+}
+
+.facts dd {
+	margin: 0;
+	color: var(--ink-2);
+}
+
+.facts__author {
+	color: var(--ink) !important;
+	font-weight: 500;
+}
+
+/* ---------- Prose -------------------------------------------------------- */
+
+.prose {
+	counter-reset: section;
+	margin-top: 2.5rem;
+}
+
+.prose > * {
+	margin-block: 0 1.15em;
+}
+
+.prose > :last-child {
+	margin-bottom: 0;
+}
+
+.prose p {
+	text-wrap: pretty;
+}
+
+/* Section indices hang on the axis. They exist so the piece is referenceable —
+   "in 02 you say" — not as decoration. */
+.prose h2 {
+	position: relative;
+	counter-increment: section;
+	margin: 3.25rem 0 1.1rem;
+	font-size: 1.375rem;
+	font-weight: 600;
+	line-height: 1.28;
+	letter-spacing: -0.013em;
+	color: var(--ink);
+	text-wrap: balance;
+}
+
+.prose h2::before {
+	content: counter(section, decimal-leading-zero);
+	position: absolute;
+	left: calc(var(--gutter) * -1);
+	/* Optically centred in the heading's first line box rather than sat on its
+	   baseline — a small numeral hung off a large heading reads better centred. */
+	top: 0.52rem;
+	width: calc(var(--gutter) - 1.1rem);
+	text-align: right;
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	line-height: 1;
+	letter-spacing: 0.06em;
+	color: var(--ink-3);
+	font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* His subsection heads are C++ type names — HashtablezInfo, ThreadIdentity,
+   MutexGlobals. Setting them in mono isn't a flourish, it's accurate. */
+/* His subsection heads are C++ type names — HashtablezInfo, ThreadIdentity,
+   MutexGlobals. Setting them in mono isn't a flourish, it's accurate. They need
+   more air above than below so they read as sectioning rather than as a stray
+   line of code sitting in the prose. */
+.prose h3 {
+	margin: 3rem 0 0.8rem;
+	font-family: var(--mono);
+	font-size: 1.0625rem;
+	font-weight: 500;
+	letter-spacing: -0.012em;
+	color: var(--ink);
+}
+
+.prose strong {
+	font-weight: 600;
+	color: var(--ink);
+}
+
+.prose em {
+	font-style: italic;
+}
+
+/* Inline code is a texture change, not a colour event — and not a box either.
+   Mono set inside a serif paragraph is already an unmistakable shift; adding a
+   tinted chiclet on top of it turns every identifier into a button and pulls
+   the eye off the sentence. Ink, mono, nothing else. */
+.prose :not(pre) > code {
+	font-family: var(--mono);
+	font-size: 0.845em;
+	color: var(--ink);
+	letter-spacing: -0.008em;
+	/* Identifiers have no break opportunities, so they stay intact on their own;
+	   this only lets a long include path break rather than overflow on a phone. */
+	overflow-wrap: break-word;
+}
+
+.prose ul,
+.prose ol {
+	padding-left: 1.35rem;
+}
+
+.prose li {
+	margin-bottom: 0.4em;
+}
+
+.prose li::marker {
+	color: var(--ink-3);
+}
+
+.prose blockquote {
+	margin-inline: 0;
+	padding-left: 1.15rem;
+	border-left: 1px solid var(--rule-2);
+	color: var(--ink-2);
+	font-style: italic;
+}
+
+/* A dinkus, not a full-bleed divider. The section numbering already carries
+   the structure; these are breath. */
+.prose hr {
+	width: 3.5rem;
+	margin: 2.6rem 0;
+	border: 0;
+	border-top: 1px solid var(--rule-2);
+}
+
+/* ---------- Exhibits ----------------------------------------------------- */
+
+/* Listings are evidence, so they get more width than the argument does, and
+   they carry the real source path they came from. */
+.prose pre.astro-code {
+	width: var(--measure-wide);
+	max-width: calc(100vw - 3rem);
+	margin: 1.6rem 0 1.75rem;
+	padding: 0.95rem 1.1rem;
+	overflow-x: auto;
+	background: var(--paper-sunk) !important;
+	border: 1px solid var(--rule);
+	border-radius: 0;
+	font-size: 0.8125rem;
+	line-height: 1.62;
+	tab-size: 2;
+}
+
+.prose pre.astro-code code {
+	font-family: var(--mono);
+	font-size: inherit;
+	background: none;
+	border: 0;
+	padding: 0;
+	white-space: pre;
+}
+
+.prose pre.astro-code[data-file] {
+	padding-top: 2.6rem;
+}
+
+.prose pre.astro-code[data-file]::before {
+	content: attr(data-file);
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	padding: 0.45rem 1.1rem 0.4rem;
+	border-bottom: 1px solid var(--rule);
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	letter-spacing: 0.02em;
+	color: var(--ink-3);
+	background: var(--paper);
+}
+
+.prose pre.astro-code {
+	position: relative;
+}
+
+/* ---------- Figures ------------------------------------------------------ */
+
+figure {
+	margin: 0;
+}
+
+figcaption {
+	margin-top: 0.7rem;
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	line-height: 1.6;
+	color: var(--ink-3);
+	max-width: var(--measure);
+}
+
+figcaption b {
+	font-weight: 500;
+	color: var(--ink-2);
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+/* ---------- Colophon ----------------------------------------------------- */
+
+.colophon {
+	margin-top: 3.5rem;
+	padding-top: 1rem;
+	border-top: 1px solid var(--rule-2);
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	line-height: 1.75;
+	color: var(--ink-3);
+}
+
+.colophon p {
+	margin: 0 0 0.35rem;
+}
+
+.colophon a {
+	color: var(--ink-2);
+}
+
+/* ---------- Narrow ------------------------------------------------------- */
+
+/* Below the point where the gutter has room to hang, the axis retracts and the
+   indices fold into the column rather than being deleted — the section numbers
+   are what makes the piece referenceable, so they stay at every width. */
+@media (max-width: 46rem) {
+	:root {
+		--gutter: 0rem;
+	}
+
+	body {
+		font-size: 1.0625rem;
+		padding-inline: 1.15rem;
+	}
+
+	.column {
+		border-left: 0;
+	}
+
+	.entry__date,
+	.label span,
+	.prose h2::before {
+		position: static;
+		display: block;
+		width: auto;
+		text-align: left;
+		line-height: 1.4;
+		margin-bottom: 0.4rem;
+	}
+
+	/* The label keeps its rule; only the text comes back inside the column, so
+	   it reads as heading-then-rule instead of hanging in a gutter that no
+	   longer exists. */
+	.label span {
+		margin-bottom: 0;
+	}
+
+	.head__title {
+		font-size: 1.75rem;
+	}
+
+	.facts {
+		grid-template-columns: 1fr;
+		gap: 0.15rem;
+	}
+
+	.facts dd {
+		margin-bottom: 0.55rem;
+	}
+
+	.prose pre.astro-code {
+		width: 100%;
+	}
+
+	/* Long include paths need to survive a 390px viewport. */
+	.prose pre.astro-code[data-file]::before {
+		font-size: 0.625rem;
+		padding-inline: 0.9rem;
+	}
+}
+
+/* ---------- Print -------------------------------------------------------- */
+
+/* This audience prints things. */
+@media print {
+	:root {
+		--paper: #fff;
+		--paper-sunk: #fff;
+	}
+
+	body {
+		font-size: 10.5pt;
+		padding: 0;
+	}
+
+	.masthead,
+	.colophon {
+		border-color: #999;
+	}
+
+	.column {
+		border-left: 0;
+		margin-left: 0;
+		padding-left: 0;
+	}
+
+	.masthead {
+		margin-left: 0;
+		padding-left: 0;
+	}
+
+	.prose h2,
+	.prose h3 {
+		break-after: avoid;
+	}
+
+	.prose pre.astro-code,
+	figure {
+		break-inside: avoid;
+		border-color: #999;
+	}
+
+	a {
+		text-decoration-color: #999;
+	}
+}

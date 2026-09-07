@@ -1,0 +1,52 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+
+const base = import.meta.env.BASE_URL;
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+const writeups = (await getCollection('writeups', ({ data }) => !data.draft)).sort(
+	(a, b) => b.data.date.valueOf() - a.data.date.valueOf()
+);
+---
+
+<Base
+	home
+	title="Yousef Mahmoud — technical writeups"
+	description="Technical deep dives and systems engineering writeups."
+>
+	<p class="standfirst">Technical deep dives and systems engineering writeups.</p>
+
+	<h2 class="label"><span>Writeups</span></h2>
+	<ul class="index">
+		{
+			writeups.map((w) => (
+				<li>
+					<time class="entry__date" datetime={iso(w.data.date)}>
+						{iso(w.data.date)}
+					</time>
+					<a class="entry__title" href={`${base}${w.id}/`}>
+						{w.data.title}
+					</a>
+					{w.data.result && <p class="entry__result">{w.data.result}</p>}
+				</li>
+			))
+		}
+	</ul>
+
+	<p class="pending"><b>In progress</b>&nbsp;&nbsp;Redis · PostgreSQL · the LLVM monorepo</p>
+
+	<h2 class="label label--verbatim"><span>lshaz</span></h2>
+	<p class="about">
+		Compile-time static analysis for false sharing, atomic contention, and cache-line geometry hazards in
+		C++.
+	</p>
+	<p class="about about--meta">
+		<a href="https://github.com/abokhalill/lshaz">github.com/abokhalill/lshaz</a>
+	</p>
+
+	<footer class="colophon">
+		<p>No JavaScript, no analytics, no cookies.</p>
+		<p><a href={`${base}rss.xml`}>RSS</a> · <a href="https://github.com/abokhalill">GitHub</a></p>
+	</footer>
+</Base>

@@ -1,0 +1,69 @@
+---
+import '../styles/site.css';
+import serifUrl from '../fonts/source-serif-4-var.woff2';
+import monoUrl from '../fonts/plex-mono-400.woff2';
+
+interface Props {
+	title: string;
+	description: string;
+	/** Suppresses the "Yousef Mahmoud" link on the index, where it would point at itself. */
+	home?: boolean;
+	/**
+	 * Filename of a share card in public/. These are rendered once with a
+	 * headless browser and committed, rather than generated at build time — a
+	 * site this size does not need an image pipeline to produce two PNGs.
+	 * See README for how to regenerate.
+	 */
+	image?: string;
+}
+
+const { title, description, home = false, image = 'og.png' } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const ogImage = new URL(`${base}${image}`, Astro.site);
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{title}</title>
+		<meta name="description" content={description} />
+		<link rel="canonical" href={canonical} />
+		<link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
+		<link rel="alternate" type="application/rss+xml" title="Yousef Mahmoud" href={`${base}rss.xml`} />
+		<meta name="author" content="Yousef Mahmoud" />
+		<meta property="og:type" content={home ? 'website' : 'article'} />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		<meta property="og:url" content={canonical} />
+		<meta property="og:image" content={ogImage} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content={description} />
+		<meta name="twitter:card" content="summary_large_image" />
+		{/* The two faces are the whole design; fetch them before the paint. */}
+		<link rel="preload" as="font" type="font/woff2" crossorigin href={serifUrl} />
+		<link rel="preload" as="font" type="font/woff2" crossorigin href={monoUrl} />
+	</head>
+	<body>
+		<div class="frame">
+			<header class="masthead">
+				{
+					home ? (
+						<span class="masthead__name">Yousef Mahmoud</span>
+					) : (
+						<a class="masthead__name" href={base}>
+							Yousef Mahmoud
+						</a>
+					)
+				}
+				<a class="masthead__link" href="https://github.com/abokhalill">github.com/abokhalill</a>
+			</header>
+			<div class="column">
+				<slot />
+			</div>
+		</div>
+	</body>
+</html>

@@ -1,17 +1,20 @@
 ---
 title: "We ran lshaz on Abseil. Here's what compile-time microarchitectural analysis actually finds in production C++."
-description: "lshaz is a Clang/LLVM-based static analysis tool that detects microarchitectural latency hazards. That includes false sharing, atomic contention, cache line geometry problems. All at compile time, before code ships."
----
-
-*lshaz is a Clang/LLVM-based static analysis tool that detects microarchitectural latency hazards. That includes false sharing, atomic contention, cache line geometry problems. All at compile time, before code ships.*
-
+dek: 'lshaz is a Clang/LLVM-based static analysis tool that detects microarchitectural latency hazards. That includes false sharing, atomic contention, cache line geometry problems. All at compile time, before code ships.'
+date: 2026-03-15
+result: '157 translation units · 0 failures · 352 diagnostics · 18 × FL002 at 100% precision'
+image: og-abseil.png
+facts:
+  - ['Target', 'abseil-cpp']
+  - ['Scan', '157 translation units, 0 failures']
+  - ['Diagnostics', '352']
+  - ['False sharing', '18 × FL002 — 100% precision at the critical tier']
+  - ['Tool', '<a href="https://github.com/abokhalill/lshaz">github.com/abokhalill/lshaz</a> · LLVM/Clang 18']
 ---
 
 One thing you and I can agree on: no software system is perfect on all aspects. In our unfortunate case, we discuss performance. Whether it's a naive struct spanning multiple cache lines, false sharing, an overly strong memory ordering being expensive for no beneficial reason, an unfriendly NUMA topology, you name it. We've all seen it. Okay maybe not all but these are generally NOT what you want in a latency sensitive pipeline.
 
 The tool presented, lshaz, is a static analyzer that maps code which compiles, looks correct, and even passes code review, to silent hardware failures. This blog delves particularly into the non-trivial findings on Abseil, a common C++ library by Google written by the most hardware-conscious engineers on the planet.
-
----
 
 ## The tool in action
 
@@ -27,8 +30,6 @@ It's worth noting that this pass is optional with the `--no-ir` flag disabling i
 
 There's obviously still a ton to be said about the tool's capabilities, design and architecture, but having everyone on the same page while being familiar with the tool's motivation is crucial before we uncover the Abseil findings.
 
----
-
 ## The Abseil Findings
 
 At last, the fireworks. Or is it? Let's dive in.
@@ -40,7 +41,8 @@ Abseil is maintained by engineers who think about cache lines for a living. If l
 The anchor finding is `HashtablezInfo` in `absl/container/internal/hashtablez_sampler.h`. This is the per-table sampling record for Abseil's SwissTable implementation, which is the hash map that runs inside essentially everything Google ships. When profiling is enabled, every sampled table gets a `HashtablezInfo` allocated from a global pool.
 
 The Abseil authors are upfront about it:
-```cpp
+
+```cpp file="absl/container/internal/hashtablez_sampler.h"
 // These fields are mutated by the various Record* APIs and need to be
 // thread-safe.
 std::atomic<size_t> capacity;
@@ -61,7 +63,8 @@ The fix is textbook field reordering: group the hot counters onto a dedicated `a
 ### ThreadIdentity
 
 Now this is fireworks. `ThreadIdentity` in `absl/base/internal/thread_identity.h` contains three atomics that share cache lines with each other and with surrounding fields:
-```cpp
+
+```cpp file="absl/base/internal/thread_identity.h"
 // The following variables are mostly read/written just by the
 // thread itself.  The only exception is that these are read by
 // a ticker thread as a hint.
@@ -79,7 +82,8 @@ So in a way, while it didn't exactly end in a 'gotcha', the Abseil authors' comm
 ### MutexGlobals
 
 `MutexGlobals` in `absl/synchronization/mutex.cc` is the global configuration for every `absl::Mutex` spin decision:
-```cpp
+
+```cpp file="absl/synchronization/mutex.cc"
 struct ABSL_CACHELINE_ALIGNED MutexGlobals {
   absl::once_flag once;
   std::atomic<int> spinloop_iterations{0};
