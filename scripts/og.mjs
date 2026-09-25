@@ -18,13 +18,14 @@
  */
 
 import { chromium } from 'playwright';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FONTS = pathToFileURL(join(ROOT, 'src/fonts')).href;
-const CONTENT = join(ROOT, 'src/content/writeups');
+const CONTENT = join(ROOT, 'writeups');
 const OUT = join(ROOT, 'public');
 
 /**
@@ -67,7 +68,7 @@ body{width:1200px;height:630px;background:#faf9f6;font-family:'SS4',serif;
 .kicker{font-family:'PM',monospace;font-size:16px;font-weight:500;letter-spacing:.11em;
   text-transform:uppercase;color:#6f6a5d;font-variant-numeric:tabular-nums lining-nums}
 h1{font-size:${titleSize}px;line-height:1.14;letter-spacing:-.019em;font-weight:600;
-  color:#14130f;margin-top:26px;max-width:1000px;text-wrap:pretty}
+  color:#14130f;margin-top:26px;max-width:1000px;text-wrap:pretty;font-variation-settings:'wght' 600}
 .foot{margin-top:auto;font-family:'PM',monospace;font-size:17px;line-height:1.5;
   color:#6f6a5d;font-variant-numeric:tabular-nums lining-nums;
   border-top:1px solid #e4e1d8;padding-top:16px}
@@ -99,17 +100,26 @@ for (const name of readdirSync(CONTENT).filter((f) => f.endsWith('.md'))) {
 		title: fm.title,
 		// Long titles need to come down a step to stay inside the card.
 		titleSize: fm.title.length > 90 ? 50 : 58,
-		foot: fm.result ?? 'abokhalill.github.io/lshaz-writeup',
+		foot: 'abokhalill.github.io/' + name.replace(/\.md$/, ''),
 	});
 }
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 });
+// The card is loaded from a file rather than via setContent: a page on
+// about:blank is not allowed to fetch file:// fonts, and silently falls back to
+// a system serif — which is how the first cards shipped.
+const dir = mkdtempSync(join(tmpdir(), 'og-'));
 for (const c of cards) {
-	await page.setContent(card(c), { waitUntil: 'networkidle' });
+	const html = join(dir, 'card.html');
+	writeFileSync(html, card(c));
+	await page.goto(pathToFileURL(html).href, { waitUntil: 'networkidle' });
 	await page.evaluate(() => document.fonts.ready);
+	const ok = await page.evaluate(() => document.fonts.check("50px 'SS4'") && [...document.fonts].every((f) => f.status !== 'error'));
+	if (!ok) throw new Error('card fonts failed to load — refusing to write a fallback-font card');
 	await page.waitForTimeout(300);
 	await page.screenshot({ path: join(OUT, c.file) });
 	console.log('wrote public/' + c.file);
 }
 await browser.close();
+rmSync(dir, { recursive: true, force: true });

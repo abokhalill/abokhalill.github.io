@@ -29,7 +29,7 @@ At last, the fireworks. Or is it? Let's dive in.
 
 Abseil is maintained by engineers who think about cache lines for a living. If lshaz was going to embarrass itself, this was the place. 157 translation units, zero failures, 352 diagnostics. 18 FL002 false sharing findings, 100% precision at the critical tier. No false positives on a codebase this well engineered. That's the headline. Now let's talk about what it actually found.
 
-### HashtablezInfo
+### `HashtablezInfo`
 
 The anchor finding is `HashtablezInfo` in `absl/container/internal/hashtablez_sampler.h`. This is the per-table sampling record for Abseil's SwissTable implementation, which is the hash map that runs inside essentially everything Google ships. When profiling is enabled, every sampled table gets a `HashtablezInfo` allocated from a global pool.
 
@@ -53,7 +53,7 @@ Nine atomic fields. All thread-safe by design. All packed across 3 cache lines, 
 
 The fix is textbook field reordering: group the hot counters onto a dedicated `alignas(64)` line, probe stats onto another, hash stats onto a third. The memory cost is negligible. The contention cost under concurrent workloads is not.
 
-### ThreadIdentity
+### `ThreadIdentity`
 
 Now this is fireworks. `ThreadIdentity` in `absl/base/internal/thread_identity.h` contains three atomics that share cache lines with each other and with surrounding fields:
 
@@ -72,7 +72,7 @@ Here's the thing though. The Abseil authors knew. That comment above the fields;
 
 So in a way, while it didn't exactly end in a 'gotcha', the Abseil authors' comments validate that the tool pointed at something not so trivial at first glance. That's exactly what lshaz does. The struct is already 352 bytes, reordering `ticker` onto its own line costs zero additional memory. Well played.
 
-### MutexGlobals
+### `MutexGlobals`
 
 `MutexGlobals` in `absl/synchronization/mutex.cc` is the global configuration for every `absl::Mutex` spin decision:
 

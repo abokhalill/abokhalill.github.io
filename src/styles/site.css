@@ -457,19 +457,24 @@ a:focus-visible {
 	font-variant-numeric: tabular-nums lining-nums;
 }
 
-/* His subsection heads are C++ type names — HashtablezInfo, ThreadIdentity,
-   MutexGlobals. Setting them in mono isn't a flourish, it's accurate. */
-/* His subsection heads are C++ type names — HashtablezInfo, ThreadIdentity,
-   MutexGlobals. Setting them in mono isn't a flourish, it's accurate. They need
-   more air above than below so they read as sectioning rather than as a stray
-   line of code sitting in the prose. */
+/* Subsection heads are serif, like every other heading. They were mono while
+   the only post's h3s were C++ type names; the second post's are sentences, and
+   a sentence set in mono reads as a stray line of code. A type name is now
+   marked up as code in the heading, and only that part goes mono. More air
+   above than below, so they read as sectioning. */
 .prose h3 {
 	margin: 3rem 0 0.8rem;
-	font-family: var(--mono);
-	font-size: 1.0625rem;
-	font-weight: 500;
-	letter-spacing: -0.012em;
+	font-size: 1.1875rem;
+	font-weight: 600;
+	line-height: 1.35;
+	letter-spacing: -0.008em;
 	color: var(--ink);
+	text-wrap: balance;
+}
+
+.prose h3 code {
+	font-size: 0.93em;
+	font-weight: 500;
 }
 
 .prose strong {
@@ -502,6 +507,13 @@ a:focus-visible {
 
 .prose li {
 	margin-bottom: 0.4em;
+}
+
+/* A reference like "pola-rs/polars#29411" breaks at its own hyphen otherwise,
+   leaving "pola-" dangling at a line end. Links in lists are references and
+   short; long bare URLs in running prose are left free to wrap. */
+.prose li a {
+	white-space: nowrap;
 }
 
 .prose li::marker {
@@ -575,6 +587,134 @@ a:focus-visible {
 	position: relative;
 }
 
+/* ---------- Tables ------------------------------------------------------- */
+
+/* Results tables. Rules between rows rather than a grid, headers as mono
+   labels, figures tabular so a column of timings lines up digit for digit and
+   can be read top to bottom — several of the arguments in the text are exactly
+   that ("read the searching column: 127, 153, 139"). */
+/* Tables are evidence, like listings, so they get the same licence to break
+   the column: they size to their content, never narrower than the measure and
+   never wider than the exhibit width. At the prose measure a four-column table
+   wrapped its own headers ("CORES / BUSY") and split SQL mid-expression. */
+.prose table {
+	width: max-content;
+	min-width: 100%;
+	max-width: min(var(--measure-wide), calc(100vw - 3rem));
+	margin: 1.6rem 0 1.9rem;
+	border-collapse: collapse;
+	font-size: 0.9375rem;
+	line-height: 1.45;
+	font-variant-numeric: tabular-nums lining-nums;
+}
+
+.prose th {
+	padding: 0 0.9rem 0.45rem 0;
+	border-bottom: 1px solid var(--rule-2);
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	text-align: left;
+	vertical-align: bottom;
+	white-space: nowrap;
+	color: var(--ink-3);
+}
+
+.prose td {
+	padding: 0.5rem 0.9rem 0.5rem 0;
+	border-bottom: 1px solid var(--rule);
+	vertical-align: top;
+	color: var(--ink-2);
+}
+
+.prose th:last-child,
+.prose td:last-child {
+	padding-right: 0;
+}
+
+.prose td strong {
+	color: var(--ink);
+}
+
+/* ---------- Clocks ------------------------------------------------------- */
+
+/* The missing-cores series tells each finding on three clocks — wall, machine,
+   design — and tags paragraphs with the one they're told on. The tag hangs in
+   the gutter beside its paragraph, the same place a section number or a date
+   goes: the gutter holds whatever identifies the row next to it. The legend at
+   the top of the post uses the identical device, so the reader learns the tags
+   once and recognises them in the margin afterwards. */
+.prose p:has(> .clock:first-child) {
+	position: relative;
+}
+
+.clock {
+	position: absolute;
+	left: calc(var(--gutter) * -1);
+	top: 0.42rem;
+	width: calc(var(--gutter) - 1.1rem);
+	text-align: right;
+	font-family: var(--mono);
+	font-size: 0.625rem;
+	font-weight: 500;
+	line-height: 1.35;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+}
+
+.clocks {
+	margin: 0 0 2.75rem;
+	padding: 0 0 1.2rem;
+	border-bottom: 1px solid var(--rule);
+}
+
+.clocks__title {
+	margin: 0 0 1rem;
+	padding-bottom: 0.55rem;
+	border-bottom: 1px solid var(--rule-2);
+	font-family: var(--mono);
+	font-size: 0.6875rem;
+	font-weight: 500;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--ink-3);
+}
+
+.clocks dl {
+	display: grid;
+	grid-template-columns: var(--gutter) minmax(0, 1fr);
+	margin: 0 0 1.1rem calc(var(--gutter) * -1);
+	row-gap: 0.65rem;
+}
+
+.clocks dt {
+	padding: 0.42rem 1.1rem 0 0;
+	text-align: right;
+	font-family: var(--mono);
+	font-size: 0.625rem;
+	font-weight: 500;
+	line-height: 1.35;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--ink);
+}
+
+.clocks dd {
+	margin: 0;
+	font-size: 1rem;
+	line-height: 1.55;
+}
+
+.clocks > p:last-child {
+	margin: 0;
+	font-size: 1rem;
+	line-height: 1.55;
+	color: var(--ink-3);
+}
+
 /* ---------- Figures ------------------------------------------------------ */
 
 figure {
@@ -639,6 +779,7 @@ figcaption b {
 
 	.entry__date,
 	.label span,
+	.clock,
 	.prose h2::before {
 		position: static;
 		display: block;
@@ -661,6 +802,31 @@ figcaption b {
 
 	.prose pre.astro-code {
 		width: 100%;
+	}
+
+	.clocks dl {
+		grid-template-columns: 1fr;
+		margin-left: 0;
+		row-gap: 0.2rem;
+	}
+
+	.clocks dt {
+		padding: 0.5rem 0 0;
+		text-align: left;
+	}
+
+	/* A wide table scrolls inside its own box rather than widening the page. */
+	.prose table {
+		display: block;
+		overflow-x: auto;
+		width: 100%;
+		min-width: 0;
+		max-width: 100%;
+		font-size: 0.8125rem;
+	}
+
+	.prose th {
+		white-space: normal;
 	}
 
 	/* Long include paths need to survive a 390px viewport. */
