@@ -2,6 +2,7 @@
 import { defineConfig } from 'astro/config';
 import sitemap from '@astrojs/sitemap';
 import { paperTheme, fileLabel } from './src/lib/paper-theme.js';
+import { rehypeFigures } from './src/lib/figures.js';
 
 // Served from the root, which requires the repo to be named `abokhalill.github.io`
 // — GitHub's "user site" convention. Renaming it back to anything else means
@@ -22,6 +23,7 @@ export default defineConfig({
 	},
 	integrations: [sitemap({ filter: (page) => !page.includes('/404') && !page.includes('/lshaz-writeup') })],
 	markdown: {
+		rehypePlugins: [rehypeFigures],
 		shikiConfig: {
 			theme: paperTheme,
 			transformers: [fileLabel],

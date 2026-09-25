@@ -409,7 +409,6 @@ a:focus-visible {
 /* ---------- Prose -------------------------------------------------------- */
 
 .prose {
-	counter-reset: section;
 	margin-top: 2.5rem;
 }
 
@@ -715,6 +714,66 @@ a:focus-visible {
 	color: var(--ink-3);
 }
 
+/* ---------- Charts ------------------------------------------------------ */
+
+/* Charts from figures/, inlined at build time with their own styles removed
+   (src/lib/figures.js). They follow the same rules as everything else: ink for
+   the thing being measured, rust only for the part that is going wrong, mono
+   for every label and number, no panel behind them. Numbered, because the
+   text refers back to them. */
+.prose {
+	counter-reset: section fig;
+}
+
+.fig {
+	counter-increment: fig;
+	width: var(--measure-wide);
+	max-width: calc(100vw - 3rem);
+	margin: 2rem 0 2.25rem;
+}
+
+.fig__art svg {
+	display: block;
+	width: 100%;
+	max-width: var(--fig-w, 100%);
+	height: auto;
+	overflow: visible;
+}
+
+.fig .surface { fill: none; }
+.fig text {
+	font-family: var(--mono);
+	font-size: 11.5px;
+	letter-spacing: -0.01em;
+}
+.fig .strong { font-weight: 500; }
+.fig .ink1 { fill: var(--ink); }
+.fig .ink2 { fill: var(--ink-2); }
+.fig .ink3 { fill: var(--ink-3); }
+.fig .onfill { fill: var(--paper); }
+.fig .grid { stroke: var(--rule); stroke-width: 1; }
+.fig .axis { stroke: var(--rule-2); stroke-width: 1; }
+.fig .ceiling { stroke: var(--rule-2); stroke-width: 1; stroke-dasharray: 3 4; fill: none; }
+.fig .s1 { fill: var(--ink-2); }
+.fig .s1l { stroke: var(--ink); }
+.fig .s2 { fill: var(--hazard); }
+.fig .other { fill: #dcd8cd; }
+.fig .area { fill: var(--ink); fill-opacity: 0.1; }
+.fig .gap { stroke: var(--paper); }
+
+.fig figcaption {
+	max-width: var(--measure);
+	margin-top: -1.25rem; /* the SVGs carry ~40px of bottom padding of their own */
+	padding-top: 0.6rem;
+	border-top: 1px solid var(--rule);
+}
+
+.fig figcaption::before {
+	content: 'Fig. ' counter(fig) ' \2014\00a0';
+	color: var(--ink-2);
+	font-weight: 500;
+}
+
 /* ---------- Figures ------------------------------------------------------ */
 
 figure {
@@ -827,6 +886,20 @@ figcaption b {
 
 	.prose th {
 		white-space: normal;
+	}
+
+	/* Scaled to a phone, chart labels drop to ~7px. They keep a readable size
+	   and scroll sideways inside their own box instead. */
+	.fig {
+		width: 100%;
+	}
+
+	.fig__art {
+		overflow-x: auto;
+	}
+
+	.fig__art svg {
+		min-width: 34rem;
 	}
 
 	/* Long include paths need to survive a 390px viewport. */

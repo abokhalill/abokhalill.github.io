@@ -72,6 +72,8 @@ Now give the query 24 threads and follow the same row. The search still costs ab
 | 4 | ~484 | ~153 | ~158 |
 | 24 | ~772 | ~139 | **~372** |
 
+![](/figures/fig1-regex-cycles-per-row.svg)
+
 Read the searching column top to bottom: 127, 153, 139. The real work never grew. Everything added on top is threads getting in each other's way.
 
 <span class="clock">Design clock</span> The pool is smart. It keeps exactly one slot that requires no locking at all, reserved for whichever thread used the regex first. Every other thread goes through a **mutex**, a lock that only one thread can hold at a time. For one regex used by one thread, that's the right design: the common case is free.
@@ -128,6 +130,8 @@ Phase timing on another query showed 23 cores waiting while one thread returned 
 | TPC-H q18 | 16.23x | **19.82x** |
 | a join (didn't care either way) | 21.58x | 21.82x |
 
+![](/figures/fig4-allocator-scaling.svg)
+
 **The finding flipped over.** Two-key top-k now scaled *better* than one-key. The bottleneck had been the allocator the whole time, not the missing optimization. That part of the code is still there to look at, but it has no measured cost, so the performance claim is withdrawn.
 
 Everything else about that harness was right. Quiet machine. Stable clock speed. Sound statistics. Correct results on every run. And one missing line still manufactured a finding, complete with a mechanism and a supporting profile.
@@ -153,14 +157,14 @@ Not what I was looking for. Worth finding anyway.
 
 **Window functions** are the SQL feature for "compute something about each row relative to its group." Number the items within each order. Look up the previous item's price. Keep a running total per customer. They're everywhere in analytics.
 
-<span class="clock">Wall clock</span> Two queries over the same 45 million orders and the same 180 million rows. The only difference is `order by` inside the window.
+<span class="clock">Wall clock</span> Two queries over the same 45 million orders and the same 180 million rows, on the 4-channel machine. The only difference is `order by` inside the window.
 
 | query | what it computes | time | cores busy |
 |---|---|---|---|
-| sum per order | `sum() over (partition by l_orderkey)` | 2,488 ms | **17.25** |
-| number rows within each order | `row_number() over (partition by l_orderkey order by ...)` | 49,015 ms | **2.27** |
+| sum per order | `sum() over (partition by l_orderkey)` | 2,617 ms | **23.06** |
+| number rows within each order | `row_number() over (partition by l_orderkey order by ...)` | 50,492 ms | **2.29** |
 
-Ask for the rows *in order* within each group, and it costs **20x**, while 22 cores sit idle.
+Ask for the rows *in order* within each group, and it costs **19x**, while nearly 22 cores sit idle.
 
 And the polars authors are upfront about it. Here's the comment sitting on top of that code path:
 
@@ -186,7 +190,7 @@ Stranger still, the slowdown came and went. Unmodified code varied 1% between ro
 
 Here's the thing though: **the same sorting function was called from a second place I hadn't read.** That second caller sorts *sub*-groups, from inside work that's already spread across every thread, where group counts are small. So my new rule kicked in there too, and launched parallel sorts inside parallel work. Threads fighting threads.
 
-**Attempt 2** lets the caller say whether the thread pool is actually free, and only the top-level caller says yes. Three-group query: **-48.1%, -48.3%, -48.1%** over three rounds. Fifty-group query: flat.
+**Attempt 2** lets the caller say whether the thread pool is actually free, and only the top-level caller says yes. Three-group query: **-48.1%, -48.3%, -48.1%** over three rounds. Fifty-group query: flat. (These sort measurements are from the 8-channel machine.)
 
 A word on correctness, because this one is subtle. The package's test suite reported success. It had run **zero tests**, because that package has no tests of its own. I recorded that as "not run," not as a pass. What actually proves correctness is an argument. Both sorting routines are **stable**, meaning rows that tie keep their original order. Two stable sorts of the same data always produce the same result. If either had been unstable, row numbers for tied rows could differ between builds, and a row count would never notice.
 
@@ -204,11 +208,13 @@ Phase timing found the real problem: from second 6 to second 47, **exactly one c
 
 **The fix:** a dedicated per-group version that builds every group's range into one output, in one pass. Same results, same error messages in the same order.
 
-| query | before | after | change |
+| 4-channel machine | before | after | change |
 |---|---|---|---|
 | row numbers, 45M groups | 50,716 ms | **13,111 ms** | **-74.15%**, 4/4 |
 | row numbers, 6M groups | 14,885 ms | 8,587 ms | **-42.28%**, 6/6 |
 | three controls | | | under 0.1%, noise |
+
+![](/figures/fig2-row-number-timeline.svg)
 
 Checked three ways. A checksum over all 179,998,372 rows: identical. A battery of 273 edge cases run through both builds: identical output, line for line, error messages included. And a profile confirmed the new code was actually running, with zero time left in the old path.
 
@@ -238,11 +244,13 @@ Two thirds of the parallel phase was one cache line bouncing between cores. The 
 
 <span class="clock">Design clock</span> A shared reference count is exactly right for a buffer with a handful of users. It was never meant for 45 million short-lived slices across 24 cores. Nobody got this wrong. The workload just outgrew the design.
 
-So the fix isn't smarter parallelism. It's not making 45 million column objects in the first place. Convert "how many rows back" once. Compute every group's shifted positions in one pass. **89.2 seconds to 19.4. -78.22%.** And the output checks itself: LAG should leave exactly one empty value per order, and it does.
+So the fix isn't smarter parallelism. It's not making 45 million column objects in the first place. Convert "how many rows back" once. Compute every group's shifted positions in one pass. **89.2 seconds to 19.4. -78.22%.** And the output checks itself: LAG should leave exactly one empty value per order, and it does. This fix isn't upstream yet. It waits on a design question a maintainer raised about the row-numbering fix, since both hook in at the same place.
+
+![](/figures/fig3-lag-timeline.svg)
 
 Did it work? Every checksum said yes. Every hand-picked test said yes. A 410-case battery comparing both builds said no. In one unusual shape of query, the old code returned one value per group and mine returned a list. It was fixed, re-run, and matched on both builds.
 
-The code got simpler. The query got 4.6x faster. Only one of those needed a test battery to believe.
+The query got 4.6x faster. Only the battery could say whether it was still right.
 
 ## The ledger, so far
 
@@ -273,14 +281,14 @@ The last two belong together. **A missing tool looks exactly like a clean result
 
 ## Still open
 
-- A join on a key with only **7 distinct values** uses about 6 of 24 cores, probably because the join splits work by key and can't split 7 values 24 ways. It needs a realistic test before anyone gets to claim it.
+- A join on a key with only **7 distinct values** uses about 8 of 24 cores, probably because the join splits work by key and can't split 7 values 24 ways. It needs a realistic test before anyone gets to claim it.
 - A sum over **3 groups** runs *slower* than the same sum over 45 million. Not chased. Yet.
 - After the fix, the row-numbering query still takes about 12.5 seconds, mostly on one or two cores: a serial sort, the new range builder itself, and mapping results back to rows. The range builder alone could be split across threads for about 1.4 seconds more.
 
 ## Receipts
 
 - Giving each decode thread its own regex: [pola-rs/polars#29411](https://github.com/pola-rs/polars/pull/29411)
-- Building every group's range in one pass: [pola-rs/polars#29537](https://github.com/pola-rs/polars/pull/29537)
+- Building every group's range in one pass: [pola-rs/polars#29537](https://github.com/pola-rs/polars/pull/29537) (under review)
 
 ---
 
