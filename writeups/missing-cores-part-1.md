@@ -5,39 +5,39 @@ date: 2026-09-25
 image: og-missing-cores-part-1.png
 ---
 
-To give you a real sense of what each of these findings costs, we will run every one of them through three clocks.
+To kind of give you a present sense of the effects each of these findings had, we will run each one through three clocks.
 
 <aside class="clocks">
 <dl>
 <dt>Wall clock</dt>
 <dd>What the end user waits for. This is the physical wall time.</dd>
 <dt>Machine clock</dt>
-<dd>Because computers are too fast to feel, we will slow one down: one cycle will equal one second. So to map this to the real world, an L1 cache hit is a heartbeat. Fetching data from main memory is a coffee break. And as we're about to see, a four-row calculation that should take a blink will take about half an hour.</dd>
+<dd>Because computers are too fast to feel, we will slow one down. We will choose one cycle to equal one second. So to map this to the real world, an L1 cache hit would be analogous to a heartbeat. Fetching data from main memory would be the equivalent of a coffee break. And as we’re about to see, a four-row calculation that should take a blink will take about half an hour.</dd>
 <dt>Design clock</dt>
 <dd>Why the source code looks the way it does.</dd>
 </dl>
-<p>It should go without saying, but every claim and finding in this writeup was measured on the exact setup and test machine listed below.</p>
+<p>This is already intuitive to deduce, and it should go without saying, but every claim or finding in this writeup was measured with the exact setup and test machine listed.</p>
 </aside>
 
-It is easy to assume that a heavily optimized open source project, especially one as fast as polars, has been profiled to death. But the truth is, high performance software is often where the most subtle inefficiencies take residence. To understand exactly where these inefficiencies lived, we first need to look at the skeleton of polars. You don't need to be a core maintainer or developer of polars. If you roughly know what a thread is and what a hash table does, you'll be alright.
+It is easy to assume that an open source project or tool that is heavily optimized, especially one as fast as polars, would likely mean that it has been profiled to death. But the truth is, high performance software is often where the most subtle inefficiencies take residence. To understand exactly where these inefficiencies lived, we need to first look at the skeletal diagram of polars. You don’t need to be a core maintainer or developer of polars. If you roughly know what a thread is and what a hash table does, you’ll be alright.
 
-## The skeleton of polars
+## What is polars?
 
-polars is a DataFrame library. Think of pandas, rebuilt from the ground up in Rust with one obsession: using every single core your machine has. You describe a query in Python, Rust or SQL, polars turns it into a plan, and then it executes that plan in parallel over data stored column by column. Very often that data comes straight out of **Parquet** files, the compressed, columnar file format that has become the standard of the data world.
+polars is a DataFrame library. Think of pandas, rebuilt from the ground up in Rust with one obsession, which is using every single core your machine has. You describe a query in Python, Rust or SQL, polars turns it into a plan, and then it executes that plan in parallel over data stored column by column. Very often that data comes straight out of **Parquet** files. These files are simply the compressed, columnar file format that has become the standard of the data world.
 
-Under the hood, polars actually has two execution engines. The older **in-memory engine** loads what it needs and works on it as a whole. The newer **streaming engine** pushes data through in batches. We'll point out which one we're in whenever the difference matters.
+polars actually has two execution engines. The older **in-memory engine** loads what it needs and works on it as a whole. The newer **streaming engine** pushes data through in batches. The difference between the two will be worth noting in a moment.
 
-**The workload.** To put polars under real pressure, we used **TPC-H**, the industry's standard analytics benchmark. It models a made-up wholesaler with customers, orders, and the individual line items on each order. At scale factor 30, the `lineitem` table alone holds **180 million rows**, and `orders` holds 45 million. Queries numbered 1 to 22 are TPC-H's own. Anything numbered higher is a probe we wrote specifically to reach code paths TPC-H never touches.
+**The workload.** In order to profile at all, we need to simulate an instance where polars is actively utilizing the machine's resources to see where the bottleneck lies. That in mind, we used **TPC-H**, the industry's standard analytics benchmark. It models a made-up wholesaler with customers, orders, and the individual line items on each order. To control the amount of data we want to simulate, we set a scale factor. It is simply a multiplier that defines the total size of the test database and the number of rows in its tables (eg. SF10 = 10GBs of data). At scale factor 30, the `lineitem` table alone holds **180 million rows**, and `orders` holds 45 million. You will often see query numbers like 6, 15, 22, etc. These are the TPC-H queries. Anything numbered higher is a custom probe that we designed to stress specific parts of the system.
 
-**The test machine.** An Intel Xeon Gold 5412U with 24 cores and 48 hardware threads, with turbo boost switched off so the clock speed never wanders. One wrinkle worth knowing up front: the machine ran with **4 memory channels** for the first half of the season and **8** for the second. More channels means more memory bandwidth, and that alone moved several baselines. Wherever it matters, the table tells you which one you're looking at.
+**The test machine.** An Intel Xeon Gold 5412U with 24 cores and 48 hardware threads, with turbo boost switched off. One wrinkle worth knowing up front: the machine ran with **4 memory channels** for the first half of the season and **8** for the second. More channels means more memory bandwidth, and that alone moved several baselines. Wherever it matters, the table tells you which one you're looking at.
 
-**How to read the tables.** Every before-and-after comparison is a *paired A/B*: the unchanged build ("stock") and the modified build ("patched") run alternately, round after round, so both see exactly the same machine conditions. Each result carries three numbers:
+**How to read the tables.** Every before-and-after comparison is a *paired A/B*: the unchanged build ("stock") and the modified build ("patched") run alternately, round after round. The purpose of this is to minimize bias. Each result carries three numbers:
 
 - **"6/6"** means the patched build won all six rounds.
-- **t** is a t-statistic. Anything beyond roughly ±3 is far outside noise. A t of -64 is not a coincidence.
+- **t** is a t-statistic. Anything beyond roughly ±3 is far outside noise. For example, a t of about -64 should make you sit upright.
 - **CI** is the 95% confidence interval for the change. If it doesn't cross zero, the effect is real.
 
-On top of that, every experiment includes **control queries**: queries the change cannot possibly affect. If a control moves, the measurement is broken, not the code.
+As an extra layer of redundancy or "sanity check", an extra control query was added to each experiment. This played the key role of confirming that the change under test was indeed the cause of the observed effect. In other words, if this control query that had nothing to do with the change does move, it means the benchmark harness itself was flawed.
 
 ## One owner, twenty-three borrowers
 
@@ -47,19 +47,19 @@ On top of that, every experiment includes **control queries**: queries the chang
 select count(*) from lineitem where l_comment like '%special%'
 ```
 
-On one thread, the answer takes 20.6 seconds. On twenty-four threads, it takes 2.76.
+On one thread, the answer takes 20.6 seconds. On twenty-four threads, it takes 2.76. At firts glance, this is immediately puzzling.
 
-That's **7.5x faster from 24 times the cores**. Roughly seventy percent of the machine is simply missing.
+24 times the man power but only 7.5x faster. Roughly seventy percent of the machine is just not there.
 
-To see where it went, you need one piece of background. polars doesn't read all 180 million comments and *then* filter them. It pushes the filter down into the Parquet reader, which tests each value the moment it's decoded and throws the losers away on the spot. This is called **predicate pushdown**, and it's a genuinely good idea. The filter in this case is a regular expression, because SQL's `LIKE` gets translated into one.
+Before we see where the rest of the machine went, there's a critical observation to be made here. polars doesn't read all 180 million comments and *then* filter them. It pushes the filter down into the Parquet reader, which tests each value the moment it's decoded and throws the losers away on the spot. This is called **predicate pushdown**, and it's a genuinely good idea. The filter here is just a plain old regex from SQL's `LIKE`.
 
 A regex engine needs scratch memory while it scans, to keep track of where it is inside the pattern. Allocating fresh scratch memory for every one of 180 million matches would be painfully slow, so the regex library keeps a **pool** of scratch buffers and lends them out.
 
-<span class="clock">Machine clock</span> Now follow a single row. On one thread, deciding whether one comment contains `special` costs about **4 minutes** of dilated time, and about 2 of those minutes are the actual search.
+<span class="clock">Machine clock</span> Now follow a single row. On one thread, deciding whether one comment contains `special` takes about **4 minutes** of dilated time, and about 2 of those minutes are the actual search.
 
-Give the same query 24 threads and follow the same row again. The search still costs about **2 minutes**. It always did. But the row now costs about **13 minutes** of thread time, and roughly **6 of them** are spent standing in a queue, waiting to borrow a scratch buffer.
+Give the same query 24 threads and follow the same row again. The search still takes about **2 minutes**. But the row now costs about **13 minutes**, and roughly **6 of them** are spent waiting to borrow a scratch buffer.
 
-*(Derived from the measurements: total thread time divided by 180M rows, converted to cycles, and split by where the profiler says the time went. It assumes every thread was busy the whole run, so treat it as an upper bound.)*
+*(total thread time divided by 180M rows, converted to cycles)*
 
 | threads | cycles per row | searching | borrowing the buffer |
 |---|---|---|---|
@@ -69,25 +69,23 @@ Give the same query 24 threads and follow the same row again. The search still c
 
 ![](/figures/fig1-regex-cycles-per-row.svg)
 
-Read the searching column from top to bottom: 127, 153, 139. The real work never grew. Everything stacked on top of it is threads getting in each other's way.
+It does not take a rocket scientist to notice the pattern depicted here. The time it takes to do the searching is exactly the same no matter the thread count. The threads are all waiting for each other to borrow the buffer.
 
-<span class="clock">Design clock</span> Here's the thing though: the pool is actually smart. It keeps exactly one slot that needs no locking at all, reserved for whichever thread used the regex first. Every other thread has to go through a **mutex**, a lock that only one thread can hold at a time. For one regex used by one thread, that is exactly the right design, because the common case is free.
+<span class="clock">Design clock</span> The pool keeps one slot that needs no locking, and it reserves that slot for whichever thread used the regex first. Every other thread has to go through a **mutex**. So whichever lucky thread happens to win this race, the rest of the threads sit idle in a queue. The reason behind this design in the first place was that the pool was built around a regex that one thread owns and uses on its own. In that case, every borrow goes through the free slot and the mutex is never touched.
 
-The problem is that polars compiles **one** regex and hands that same object to **every** thread decoding the file. One thread gets the free lane. The other twenty-three take the lock, once per value, across 180 million values.
+The problem arises when polars compiles **one** regex and hands that same object to **every** thread decoding the file. So again, in essence, one thread owns the pool while the twenty three siblings wait for it to release the mutex.
 
-How can we be sure that's what's happening? The profiler practically confesses. The hottest function is `Pool::put_value`, the code that *returns* a borrowed buffer, and it only ever runs when the returning thread isn't the owner. If every thread had its own regex, that function wouldn't show up at all.
+But how can we even be sure that's what's happening? Well, the profiler practically confesses. The hottest function is `Pool::put_value`, the code that *returns* a borrowed buffer, and it only ever runs when the returning thread isn't the owner. If every thread had its own regex, that function wouldn't show up at all.
 
-**The fix** gives each thread its own copy of the regex, through a per-thread regex cache polars already had elsewhere. A polars maintainer, orlp, suggested that route in code review, and it rests on a detail nobody had actually checked. When you copy a regex in this library, the copy gets a **brand-new** pool, owned by whichever thread uses it first. Had copying shared the original pool instead, his suggestion would have silently done nothing while looking perfectly clean in review. It doesn't. That's a library designed well all the way down.
+**The fix** is relatively straightforward. Give each thread its own copy of the regex, through a per-thread regex cache polars already had elsewhere. The effect this had was immediate, and the numbers give no room for discussion.
 
 | 8-channel machine | before | after | change |
 |---|---|---|---|
 | `like '%special%'` | 2544.0 ms | **1085.9 ms** | **-57.23%**, t=-64.33, 6/6 |
 | `like 'the%'` | 1835.3 ms | **677.8 ms** | **-62.85%**, 6/6 |
-| control, no regex | 237.4 ms | 235.4 ms | -0.86%, noise |
+| control, no regex | 237.4 ms | 235.4 ms | -0.86% |
 
-Scaling jumped from **8.6x to 20.4x**, while the single-thread time barely moved. That second number is the one we trust most. The owning thread always had the free lane, so a correct fix *has* to change nothing at one thread and a lot at 24. That is exactly what it did.
-
-One more thing. The pull request itself claimed **-61.5%**. That number came from the 4-channel machine, and it was correct there. On 8 channels it **does not reproduce**, at any thread count we tried. The fixed build performed the same on both machines. The entire gap was in the *unfixed* build: extra memory bandwidth makes the lock-bound version faster without making the fix any weaker.
+Scaling jumped from **8.6x to 20.4x**, while the single-thread time barely moved. This directly aligns with our previous hypothesis, which claimed that the owning thread always had the free lane, and so a correct fix *has* to change nothing at one thread and a lot at 24, which checks out.
 
 Same patch, two machines, two correct numbers.
 
@@ -245,50 +243,6 @@ Did it work? Every checksum said yes. Every hand-picked test said yes. A 410-cas
 
 The code got simpler and the query got 4.6x faster, but only one of those needed a test battery to believe.
 
-## The ledger, so far
-
-Everything in this post that we confidently wrote down and later had to correct:
-
-| we said | what was actually true |
-|---|---|
-| The regex slowdown was in polars' general string code | That code already gave each thread its own regex. The bug was only in the Parquet reader |
-| The regex fix is -61.5% | On the 4-channel machine. On 8 channels, -54% to -58.5% |
-| Two-key top-k wastes ~80&nbsp;ms | The allocator was the bottleneck. Withdrawn |
-| TPC-H q18 hits the same top-k problem | Top-k is 0.21% of q18 |
-| Two top-k queries made a controlled comparison | They read different columns |
-| The row-numbering slowdown was a particular loop | That loop never runs for this query. We'd read code instead of profiling |
-| One window query had ~1.5M groups | 6,000,000 |
-| “Formatting check: clean” | The check had failed on a missing tool. We read the exit code of the wrong command |
-| Two boundary queries “passed” | Both had crashed. The check compared two empty outputs and called them equal |
-
-The last two belong together. **A missing tool looks exactly like a clean result.** Check that the tool actually ran, and treat empty output as a failure, not as agreement.
-
-## What this part taught us
-
-1. **Change one variable and watch what moves.** One measurement can't tell threads fighting from threads working.
-2. **Profiles average; timelines slice.** A single-threaded phase disappears into the average and stands out in the timeline.
-3. **Benchmark with the project's own allocator.** Otherwise you're benchmarking your harness.
-4. **Profile before you blame.** Both of our wrong attributions here came from reading code and never checking it against a profile.
-5. **Run the same cases through both versions and diff everything.** Checksums missed the LAG bug. The diff caught it.
-6. **Every number comes with its machine.** -61.5% and -57%, same patch, both correct.
-
-## Still open
-
-- A join on a key with only **7 distinct values** uses about 6 of 24 cores, probably because the join splits work by key and can't split 7 values 24 ways. It needs a realistic test before anyone gets to claim it.
-- A sum over **3 groups** runs *slower* than the same sum over 45 million. Not chased. Yet.
-- After the fix, the row-numbering query still takes about 12.5 seconds, mostly on one or two cores: a serial sort, the new range builder itself, and mapping results back to rows. The range builder alone could be split across threads for about 1.4 seconds more.
-
-## Receipts
-
-- Giving each decode thread its own regex: [pola-rs/polars#29411](https://github.com/pola-rs/polars/pull/29411)
-- Building every group's range in one pass: [pola-rs/polars#29537](https://github.com/pola-rs/polars/pull/29537)
-
 ---
-
-None of this came from a clever algorithm. It came from finding where a core was waiting, or working for nothing, and asking why.
-
-<span class="clock">Wall clock</span> One last time: someone types a query and waits.
-
-Every table above is time handed back to them.
 
 *Next in the series: **Twelve seconds at a time**, where a single core spends 17% of a query waiting on bytes it wrote a moment earlier, and three small patches that give most of it back.*
