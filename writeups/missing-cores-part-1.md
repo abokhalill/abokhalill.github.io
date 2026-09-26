@@ -25,17 +25,17 @@ It is easy to assume that an open source project or tool that is heavily optimiz
 
 polars is a DataFrame library. Think of pandas, rebuilt from the ground up in Rust with one obsession, which is using every single core your machine has. You describe a query in Python, Rust or SQL, polars turns it into a plan, and then it executes that plan in parallel over data stored column by column. Very often that data comes straight out of Parquet files. These files are simply the compressed, columnar file format that has become the standard of the data world.
 
-polars actually has two execution engines. The older in-memory engine loads what it needs and works on it as a whole. The newer streaming engine pushes data through in batches. The difference between the two will be worth noting in a moment.
+polars actually has two execution engines. The older in-memory engine loads what it needs and works on it as a whole. The newer streaming engine pushes data through in batches. We will draw on this distinction more as we encounter it.
 
 **The workload.** In order to profile at all, we need to simulate an instance where polars is actively utilizing the machine's resources to see where the bottleneck lies. That in mind, we used TPC-H, the industry's standard analytics benchmark. It models a made-up wholesaler with customers, orders, and the individual line items on each order. To control the amount of data we want to simulate, we set a scale factor. It is simply a multiplier that defines the total size of the test database and the number of rows in its tables (eg. SF10 = 10GBs of data). At scale factor 30, the `lineitem` table alone holds 180 million rows, and `orders` holds 45 million. You will often see query numbers like 6, 15, 22, etc. These are the TPC-H queries. Anything numbered higher is a custom probe that we designed to stress specific parts of the system.
 
-**The test machine.** An Intel Xeon Gold 5412U with 24 cores and 48 hardware threads, with turbo boost switched off. One wrinkle worth knowing up front: the machine ran with 4 memory channels for the first half of the season and 8 for the second. More channels means more memory bandwidth, and that alone moved several baselines. Wherever it matters, the table tells you which one you're looking at.
+**The test machine.** An Intel Xeon Gold 5412U with 24 cores and 48 hardware threads, with turbo boost switched off. This isn't particularly all that important if you're just passively reading and do not care much about reproducing these numbers, but the machine ran with only 4 memory channels for the first half of the season and 8 for the second. You will sometimes see tables labeled with "8 channel machine" and other tables with "4 channel machine". Again, this isn't all that important but it's worth clarifying.
 
-**How to read the tables.** Every before-and-after comparison is a *paired A/B*: the unchanged build ("stock") and the modified build ("patched") run alternately, round after round. The purpose of this is to minimize bias. Each result carries three numbers:
+**How to read the tables.** Every before-and-after comparison is a *paired A/B*: the unchanged build ("stock") and the modified build ("patched") run alternately, round after round. The purpose of this is to minimize bias, with each result accompanied by three numbers:
 
 - "6/6" means the patched build won all six rounds.
-- t is a t-statistic. Anything beyond roughly ±3 is far outside noise. For example, a t of about -64 should make you sit upright.
-- CI is the 95% confidence interval for the change. If it doesn't cross zero, the effect is real.
+- t is a t-statistic. Anything beyond roughly ±3 is far outside what is considered noise. For example, a t of about -64 should make you sit upright.
+- CI is the 95% confidence interval for the change.
 
 As an extra layer of redundancy or "sanity check", an extra control query was added to each experiment. This played the key role of confirming that the change under test was indeed the cause of the observed effect. In other words, if this control query that had nothing to do with the change does move, it means the benchmark harness itself was flawed.
 
@@ -57,7 +57,7 @@ A regex engine needs scratch memory while it scans, to keep track of where it is
 
 <span class="clock">Machine clock</span> Now follow a single row. On one thread, deciding whether one comment contains `special` takes about 4 minutes of dilated time, and about 2 of those minutes are the actual search.
 
-Give the same query 24 threads and follow the same row again. The search still takes about 2 minutes. But the row now costs about 13 minutes, and roughly 6 of them are spent waiting to borrow a scratch buffer.
+Give the same query 24 threads and follow the same row again. The search still takes about 2 minutes, but the row now costs about 13 minutes, and roughly 6 of them are spent waiting to borrow a scratch buffer.
 
 *(total thread time divided by 180M rows, converted to cycles)*
 
@@ -77,7 +77,7 @@ The problem arises when polars compiles one regex and hands that same object to 
 
 But how can we even be sure that's what's happening? Well, the profiler practically confesses. The hottest function is `Pool::put_value`, the code that *returns* a borrowed buffer, and it only ever runs when the returning thread isn't the owner. If every thread had its own regex, that function wouldn't show up at all.
 
-**The fix** is relatively straightforward. Give each thread its own copy of the regex, through a per-thread regex cache polars already had elsewhere. The effect this had was immediate, and the numbers give no room for discussion.
+The fix is relatively straightforward: give each thread its own copy of the regex, through a per-thread regex cache polars already had elsewhere. To say this had a meaningful impact was an understatement, and the numbers leave no room for discussion.
 
 | 8-channel machine | before | after | change |
 |---|---|---|---|
@@ -85,66 +85,28 @@ But how can we even be sure that's what's happening? Well, the profiler practica
 | `like 'the%'` | 1835.3 ms | 677.8 ms | -62.85%, 6/6 |
 | control, no regex | 237.4 ms | 235.4 ms | -0.86% |
 
-Scaling jumped from 8.6x to 20.4x, while the single-thread time barely moved. This directly aligns with our previous hypothesis, which claimed that the owning thread always had the free lane, and so a correct fix *has* to change nothing at one thread and a lot at 24, which checks out.
+Scaling jumped from 8.6x to 20.4x, while the single-thread time barely moved. This directly aligns with our previous hypothesis, which claimed that the owning thread always had the free lane, and so a correct fix *has* to change nothing at one thread and a lot at 24, which again, checks out.
 
 Same patch, two machines, two correct numbers.
 
-## Instruments for the invisible
+## Flying blind
 
-Before going any further, it's worth stepping back, because none of these findings came from staring at a profiler.
+Before we go any further, it's worth taking a step back, because counter-intuitevely, none of these findings surfaced from profiler data. 
 
-A profiler samples the CPU thousands of times a second and records which function was running. It's the standard tool, and it's excellent at exactly one thing: telling you where *busy* cores spend their time.
+A profile is excellent at exactly one thing: telling you what the *already* busy cores are doing. That is, each core that's actively being utilized has a meticulous stack trace showing exactly what it's working on.
 
-The regex bug was found differently. We changed one variable, the thread count, and watched how the profile *moved*. At one thread, zero time in the pool. At four, a third of it. At twenty-four, half. The real work per row stays flat while the coordination cost climbs with every thread you add. No single profile can show you that. Only the comparison can.
+But the problem kind of already spells itself here. What about cores that are sitting completely idle? To put it simply, if the full 24 cores are expected to be working, how do we know that's the case? And the more perplexing question, what triggered an investigation into this in the first place?
 
-Running that same sweep across 45 queries led us to a second instrument. Linux's `perf stat` reports how many CPUs were actually utilized on average, and that one number splits bad scaling into two failures that look identical on a stopwatch:
+This was how the regex bug was found. We changed the thread count, and watched how the profile moved. At one thread, zero time in the pool. At four, a third of it. At twenty-four, half. This was what triggered the so called investigation, which unfortunately no profiler can show.
 
-- **Busy cores, bad scaling.** The cores are working, but on wasted effort: fighting over locks and shared data. That's the regex pool.
-- **Idle cores, bad scaling.** The work simply isn't there to do. And here's the catch: a profile of this looks completely clean, because a core sitting idle never shows up as a function.
+Running that same sweep across 45 queries led us to a second instrument. Linux's `perf stat` reports how many CPUs were actually utilized on average, split into two kinds of failures:
+
+- **Busy cores, bad scaling.** The cores are working, but on wasted effort, that's the regex pool.
+- **Idle cores, bad scaling.** The work simply isn't there to do. As we just concluded, this looks completely clean on a profiler.
 
 So how do you see time that leaves no trace in the profile?
 
-Enter phase timing. Chop the run into one-second buckets and count how many cores were busy in each one. It turned out to be the instrument of the entire season. On a 24-core machine, one thread grinding away alone for forty seconds is only a *tiny* fraction of the total samples. One query's profile looked flat and utterly boring, with its top function at a mere 4%. The phase timeline for that very same query showed exactly one core busy, from second 6 to second 47.
-
-The profile averaged the problem away. The timeline caught it red-handed.
-
-### The twist: the benchmark was lying about memory allocation
-
-Halfway through the season, we had a villain, and a convincing one. Queries sorting by two columns to fetch a top-k (`ORDER BY a, b LIMIT k`) scaled at only 12x. We found the code responsible, and it really does skip an optimization that the one-column version gets. Mechanism, profile, estimate. Case closed.
-
-Or was it?
-
-Phase timing on another query showed 23 cores sitting and waiting while a single thread returned memory to the operating system. Why on earth would *cleanup* be single-threaded? The answer turned out to be one missing line in our own benchmark harness. Every program runs on a memory allocator, the code behind every `malloc` and `free`. Our harness used the system default, glibc's. polars ships with a different one, jemalloc, which is built specifically for heavily multi-threaded programs.
-
-| same code, allocator swapped | glibc scaling | jemalloc scaling |
-|---|---|---|
-| two-key top-k | 12.06x | 20.47x |
-| another two-key top-k | 15.70x | 20.19x |
-| TPC-H q18 | 16.23x | 19.82x |
-| a join (didn't care either way) | 21.58x | 21.82x |
-
-![](/figures/fig4-allocator-scaling.svg)
-
-**The finding flipped completely.** With the right allocator, two-key top-k scaled *better* than one-key. The bottleneck had been the allocator all along, not the missing optimization. That piece of code is still there to look at, but it has no measured cost, so we withdrew the performance claim.
-
-Everything else about that harness was right. The machine was quiet, the clock speed was stable, the statistics were sound, and the results were correct on every single run. And one missing line still managed to invent a finding out of thin air, complete with a convincing mechanism and a supporting profile.
-
-A benchmark that doesn't use the project's own allocator isn't benchmarking the project. It's benchmarking itself.
-
-### An aside: the very first query crashed
-
-Funnily enough, the very first probe query we wrote didn't find a slowdown at all:
-
-```text
-thread 'main' panicked at crates/polars-stream/src/nodes/top_k.rs:488:24:
-not implemented for dtype Int128
-```
-
-The query was simply "top 20 rows sorted by a price column." Prices are stored as decimals, and polars keeps decimals internally as 128-bit integers. The sorting code *does* have a case for 128-bit integers. But that case is switched on by a compile-time feature flag, and Rust evaluates this particular flag where the code is *used*, not where it's *written*. The streaming engine's build never turned the flag on. Five of polars' internal packages turn it on correctly. Four don't.
-
-The fix is a single line in a build file. Python users never hit it, because the Python build enables the flag explicitly. Rust users could, with nothing more exotic than a Parquet file containing a decimal column.
-
-Not what we were looking for, but absolutely worth finding.
+Enter phase timing. Chop the run into one second buckets and count how many cores were busy in each one. On a 24-core machine, one thread grinding away alone for forty seconds is only a *tiny* fraction of the total samples. In one example, one query's profile looked completely flat, with its top function at a mere 4%. But the phase timeline for that very same query showed exactly one core busy, from second 6 to second 47.
 
 ## The one-core hours
 
