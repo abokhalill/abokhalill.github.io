@@ -761,11 +761,13 @@ a:focus-visible {
 .fig .area { fill: var(--ink); fill-opacity: 0.1; }
 .fig .gap { stroke: var(--paper); }
 
+/* No rule and no pull-up: each generated SVG carries a different amount of
+   empty space below its axis, so any fixed offset collides with one of them
+   (it ran through Fig. 2's tick labels). The "Fig. N" label marks the caption
+   well enough on its own. */
 .fig figcaption {
 	max-width: var(--measure);
-	margin-top: -1.25rem; /* the SVGs carry ~40px of bottom padding of their own */
-	padding-top: 0.6rem;
-	border-top: 1px solid var(--rule);
+	margin-top: 0.35rem;
 }
 
 .fig figcaption::before {
