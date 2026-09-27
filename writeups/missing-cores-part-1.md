@@ -1,6 +1,6 @@
 ---
 title: "The Missing Cores: A 24-core machine is idle inside polars?!"
-dek: "This is part one of a season spent profiling the popular DataFrame library polars. It covers a regex that leaves 23 of 24 threads stuck in line for a lock, window functions that run for a staggering forty seconds on one core, and a benchmark accident that invented a finding out of thin air."
+dek: "This is part one of a season spent profiling the popular DataFrame library polars."
 date: 2026-09-25
 image: og-missing-cores-part-1.png
 ---
@@ -119,17 +119,13 @@ Window functions are the SQL feature for "compute something about each row relat
 | sum per order | `sum() over (partition by l_orderkey)` | 2,617 ms | 23.06 |
 | number rows within each order | `row_number() over (partition by l_orderkey order by ...)` | 50,492 ms | 2.29 |
 
-Asking for the rows *in order* within each group costs a staggering 19x, while nearly 22 cores sit around doing nothing.
-
-And the polars authors are completely upfront about it. Here's the comment sitting right on top of that code path:
+Asking for the rows *in order* within each group costs a staggering 19x, while nearly 22 cores sit around doing nothing. History kind of repeats itself here yet again. However, this time, the polars authors are aware of this and in fact completely upfront about it:
 
 ```rust file="crates/polars-expr/src/expressions/window.rs"
 // ... we can now relatively efficient arg_sort per group. This
 // is still horrendously slow, but at least not as bad as it would be if you
 // did this naively.
 ```
-
-Nobody missed this. It was written down, in plain English, waiting for someone to pick it up.
 
 ### Few big groups: a sort told to stay home
 
