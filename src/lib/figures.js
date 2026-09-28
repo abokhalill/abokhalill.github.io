@@ -13,8 +13,8 @@ import { join } from 'node:path';
  * rule that — once inlined — would turn the charts dark on a light page.
  * Inlining rather than <img> is what lets them use the page's own webfonts.
  *
- * The caption is the image's alt text if given, otherwise the SVG's own
- * aria-label, so the figure never carries words its author didn't write.
+ * The caption is just the figure number. Alt text, if given, is appended after
+ * it. The SVG's own aria-label stays on the <svg> for screen readers.
  */
 const DIR = join(process.cwd(), 'figures');
 
@@ -46,7 +46,7 @@ function figure(img) {
 	svg = svg.replace(/<style>[\s\S]*?<\/style>/, '');
 	const width = svg.match(/viewBox="0 0 (\d+(?:\.\d+)?) /)?.[1];
 	svg = svg.replace(/(<svg\b[^>]*?)\s+width="[^"]*"\s+height="[^"]*"/, '$1');
-	const caption = String(img.properties.alt || svg.match(/aria-label="([^"]*)"/)?.[1] || '');
+	const caption = String(img.properties.alt || '');
 	return {
 		type: 'element',
 		tagName: 'figure',
@@ -58,9 +58,12 @@ function figure(img) {
 				properties: { className: ['fig__art'], style: width ? `--fig-w:${width}px` : undefined },
 				children: [{ type: 'raw', value: svg }],
 			},
-			...(caption
-				? [{ type: 'element', tagName: 'figcaption', properties: {}, children: [{ type: 'text', value: caption }] }]
-				: []),
+			{
+				type: 'element',
+				tagName: 'figcaption',
+				properties: {},
+				children: caption ? [{ type: 'text', value: caption }] : [],
+			},
 		],
 	};
 }

@@ -770,10 +770,16 @@ a:focus-visible {
 	margin-top: 0.35rem;
 }
 
+/* Just the number by default. If a figure is ever given alt text, it follows
+   after a dash. */
 .fig figcaption::before {
-	content: 'Fig. ' counter(fig) ' \2014\00a0';
+	content: 'Fig. ' counter(fig);
 	color: var(--ink-2);
 	font-weight: 500;
+}
+
+.fig figcaption:not(:empty)::before {
+	content: 'Fig. ' counter(fig) ' \2014\00a0';
 }
 
 /* ---------- Figures ------------------------------------------------------ */

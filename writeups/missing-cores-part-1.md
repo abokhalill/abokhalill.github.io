@@ -49,7 +49,7 @@ select count(*) from lineitem where l_comment like '%special%'
 
 On one thread, the answer takes 20.6 seconds. On twenty-four threads, it takes 2.76. At firts glance, this is immediately puzzling.
 
-24 times the man power but only 7.5x faster. Roughly seventy percent of the machine is just not there.
+24 times the man power but only 7.5x faster? Roughly seventy percent of the machine is just not there.
 
 Before we see where the rest of the machine went, there's a critical observation to be made here. polars doesn't read all 180 million comments and *then* filter them. It pushes the filter down into the Parquet reader, which tests each value the moment it's decoded and throws the losers away on the spot. This is called predicate pushdown. The filter here is just a plain old regex from SQL's `LIKE`.
 
