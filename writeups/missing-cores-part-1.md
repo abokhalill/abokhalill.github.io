@@ -51,9 +51,9 @@ On one thread, the answer takes 20.6 seconds. On twenty-four threads, it takes 2
 
 24 times the man power but only 7.5x faster. Roughly seventy percent of the machine is just not there.
 
-Before we see where the rest of the machine went, there's a critical observation to be made here. polars doesn't read all 180 million comments and *then* filter them. It pushes the filter down into the Parquet reader, which tests each value the moment it's decoded and throws the losers away on the spot. This is called predicate pushdown, and it's a genuinely good idea. The filter here is just a plain old regex from SQL's `LIKE`.
+Before we see where the rest of the machine went, there's a critical observation to be made here. polars doesn't read all 180 million comments and *then* filter them. It pushes the filter down into the Parquet reader, which tests each value the moment it's decoded and throws the losers away on the spot. This is called predicate pushdown. The filter here is just a plain old regex from SQL's `LIKE`.
 
-A regex engine needs scratch memory while it scans, to keep track of where it is inside the pattern. Allocating fresh scratch memory for every one of 180 million matches would be painfully slow, so the regex library keeps a pool of scratch buffers and lends them out.
+A regex engine needs scratch memory while it scans in order to keep track of where it is inside the pattern. Allocating fresh scratch memory for every one of 180 million matches would be painfully slow, so the regex library keeps a pool of scratch buffers and lends them out.
 
 <span class="clock">Machine clock</span> Now follow a single row. On one thread, deciding whether one comment contains `special` takes about 4 minutes of dilated time, and about 2 of those minutes are the actual search.
 
@@ -87,11 +87,11 @@ The fix is relatively straightforward: give each thread its own copy of the rege
 | `like 'the%'` | 1835.3 ms | 677.8 ms | -62.85%, 6/6 |
 | control, no regex | 237.4 ms | 235.4 ms | -0.86% |
 
-On the 8-channel machine, scaling jumped from 8.6x to 20.4x (the 7.5x we opened with came from an earlier run of the same box), while the single-thread time barely moved. This directly aligns with our previous hypothesis, which claimed that the owning thread always had the free lane, and so a correct fix *has* to change nothing at one thread and a lot at 24, which again, checks out.
+On the 8-channel machine, scaling jumped from 8.6x to 20.4x, while the single-thread time barely moved. This directly aligns with our previous hypothesis, which claimed that the owning thread always had the free lane, and so a correct fix *has* to change nothing at one thread and a lot at 24, which again, checks out.
 
-<span class="clock">Machine clock</span> Let's follow that same row one last time. At twenty-four threads, it used to cost about 15 minutes of thread time. With the fix, it costs about 6. For comparison, the very same row costs about 5 minutes on a single thread, where there is nobody to wait on. In other words, the row is back to doing its own work and not much else.
+<span class="clock">Machine clock</span> Let's follow that same row one last time. At twenty-four threads, it used to cost about 15 minutes of thread time. With the patch now applied, it costs about 6. For comparison, the very same row costs about 5 minutes on a single thread, where there is nobody to wait on. In other words, the row is back to doing its own work and not much else.
 
-*(same method as the cycles table above, so again an upper bound, measured on the 8-channel machine)*
+*(same method as the cycles table above)*
 
 ## Flying blind
 
@@ -137,8 +137,9 @@ Once again, the disaster becomes immediately crystal. Asking for the rows *in or
 // did this naively.
 ```
 
-<span class="clock">Machine clock</span> Here's the part that's easy to miss. Add up the work every core did and split it per row. The sum costs each row about 12 minutes of core time. Row numbering costs about 22. The work didn't even double. What did grow is the time you wait for each row to come out the other end: about 30 seconds for the sum, and close to 10 minutes for row numbering. So nearly twice the work, and nineteen times the wait. The work isn't what went missing. The cores are.
+<span class="clock">Machine clock</span> There's another observation to be made here. If you tally the work across all 24 cores and split it per row, `SUM` comes out to be about 12 minutes of dilated time. `ROW_NUMBER` about 22. 
 
+But on the Wall Clock, a row comes out of the sum in just 30 seconds, and takes close to 10 minutes for row numbering. So if my math is correct that should be about 1.8x the compute stalled behind a 19x latency wall. 22 of your cores simply clocked out.
 ### Few big groups
 
 <span class="clock">Design clock</span> When there are millions of small groups, polars distributes the groups across available threads and sorts each group sequentially. Because there are millions of groups, there is plenty of work to go around, and so there will rarely be any time wasted where a thread at any moment isn't being utilized. We have a perfect balance of work distribution and parallelization.
@@ -147,11 +148,11 @@ However, this is not so trivial when your dataset contains millions of rows divi
 
 If we are to solve this purely by intuition, the first thing that would naturally come to mind is to have every group sort use every single thread available whenever we have fewer groups than we have threads. For example, if we had 19 groups and 24 threads, instead of each thread getting its own group and five sitting idle, we could allow individual group sorts to parallelize across the extra thread capacity. This would be implemented using some kind of parallel sort logic like a merge sort or polars' own rayon-based parallel sorting.
 
-While this does work in simple cases, it is difficult to generalize and introduces a subtlety: what happens when a worker thread already running in parallel spawns its own sub-parallel sort? The answer is you get nested parallelism. This causes dozens of worker threads to begin tearing each other apart for the same physical 24 CPU cores; a state known as  oversubscription, which leads to constant context switching and erratic performance.
+While this does work in simple cases, it is difficult to generalize and introduces a subtlety: what happens when a worker thread already running in parallel spawns its own sub-parallel sort? You get nested parallelism. This causes dozens of worker threads to begin tearing each other apart for the same physical 24 CPU cores; a state known as  oversubscription, which leads to constant context switching and erratic performance.
 
 To fix this is to have the query engine answer one extra question: who am I?
 
-The sorting function is updated to accept an extra parameter: a boolean flag to indicate whether or not I (the caller), am a top level caller owning the thread pool, or a nested child caller running inside an already parallelized worker thread. 
+The sorting function is updated to accept an extra parameter: a boolean flag to indicate whether or not the caller is a top level caller owning the thread pool, or a nested child caller running inside an already parallelized worker thread. 
 
 If the caller is a top level parent, it passes `pool_is_free = true`. The sorting routine then checks this flag and sees that the 24 cores are genuinely idle. Having cleared the background check, it then expands the single group’s sort across all 24 threads using parallel algorithms such as Rayon. 
 
@@ -159,30 +160,32 @@ Likewise, if the caller is instead a nested child, then the flag passed is false
 
 It’s a simple yet elegant solution. For the two scenarios, whether or not we have few big groups or many nested sub sorts, we will either drop the execution time by a meaningful margin or we will have zero performance flicker. The many group query will stay rock solid flat, completely immune to oversubscription and unpredictable variance.
 
-<span class="clock">Wall clock</span> And so it did. With three groups, the query went from 20.4 seconds to 10.6, and it did so three rounds in a row: -48.1%, -48.3%, -48.1%. The machine went from about 3 cores busy to about 7. The fifty group query, the one that would have been the victim of oversubscription, stayed flat.
+<span class="clock">Wall clock</span> And so it did. With three groups, the query went from 20.4 seconds to 10.6, three rounds consecutively: -48.1%, -48.3%, -48.1%. The machine went from about 3 cores busy to about 7. A fifty group query, one that would have resulted in skewed metrics, stayed flat.
 
 | 8-channel machine | before | after | change |
 |---|---|---|---|
 | 3 groups | 20,402 ms | 10,557 ms | -48.1%, -48.3%, -48.1% |
 | 50 groups | | | flat |
 
+So why only seven cores and not the full twenty-four? Honestly, we have no idea yet. The seven cores is an average over the whole query. In other words, if there's anything else that is still running on one single core, that is causing the number to be dragged down because it's not being distributed over the whole 24 cluster.
+
 <span class="clock">Machine clock</span> Spread over all 180 million rows, that's about 4 minutes of waiting per row before the fix, and about 2 after.
 
 ### Many tiny groups
 
-Now the other extreme: 45 million orders, about four rows each.
+Now the other extreme: 45 million groups, about four rows each.
 
 <span class="clock">Wall clock</span> The ordered query from earlier, the one that numbers the rows within each order, takes 50.7 seconds. And for 41 of those seconds, exactly one core is doing anything at all.
 
-That second number is phase timing earning its keep. The timeline sits at exactly one core from second 6 to second 47, and a profile of just that window finally names the culprit: 74.67% of the time sits inside a generic fallback routine, all of it on a single thread.
+Once again, this is phase timing in motion, which shows that exactly one core is active from t=6s to t=47s. A profile of just that window finally uncovers the mystery: 74.67% of the time sits inside a generic fallback routine, all of it on a single thread.
 
-<span class="clock">Machine clock</span> 45 million groups of about four rows, in roughly forty seconds on one core. That works out to about half an hour of dilated time per four-row group. Half an hour, to count to four. And most of it is spent building and throwing away column objects around that four-number range.
+<span class="clock">Machine clock</span> 45 million groups of about four rows, in roughly forty seconds on one core. That works out to about half an hour of dilated time per four-row group. Half an hour, to count to four. Ironically, most of this time is not even dedciated to anything analytical, it's just constant memory allocation and freeing due to the millions of tiny groups.
 
-<span class="clock">Design clock</span> polars' SQL layer implements `row_number()` as "make a range from 0 to the group's length, then add 1." Range-building has no dedicated per-group implementation, so it falls back to a general-purpose path. That path walks every group one by one: package each input into a standalone column object (a Series, polars' heap-allocated column type), call the function, collect the result. As a fallback for rarely used functions, that's perfectly sensible. The problem is that `row_number()` is anything but rarely used.
+<span class="clock">Design clock</span> Polars’ SQL layer implements ROW_NUMBER() with naive simplicity: generate a range from 0 to the group's length, then add 1. But because range-building lacked a dedicated per-group path, the query planner defaulted to its general purpose fallback.
 
-The fix is a dedicated per-group version that builds every group's range into one output in a single pass, with the same results and the same error messages in the same order.
+This fallback processes all 45 million groups one by one: wrap the input into a standalone, heap-allocated Series object, invoke the function, extract the result, and discard the wrapper. For an obscure utility function, it could be argued that this overhead is somewhat reasonable. The flaw, of course, is that `ROW_NUMBER()` is anything but rarely used.
 
-<span class="clock">Wall clock</span> 50.7 seconds became 13.1, and the win shrinks right along with the number of groups, which is exactly what you'd expect from a cost that's paid once per group.
+The solution? A dedicated per-group version that builds every group's range into one output in a single pass, with the same results and the same error messages in the same order.
 
 | 4-channel machine | before | after | change |
 |---|---|---|---|
