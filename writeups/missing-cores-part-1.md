@@ -122,7 +122,7 @@ SQL window functions: A window function is an SQL feature used to compute someth
 
 This now loaded into context, it is intuitive to guess that such functions are practically everywhere in analytics.
 
-<span class="clock">Wall clock</span> Here are two queries over the same 45 million orders and the same 180 million rows The only difference between the two is an `order by` inside the window.
+<span class="clock">Wall clock</span> Here are two queries over the same 45 million orders and the same 180 million rows. The only difference between the two is an `order by` inside the window.
 
 | 4-channel machine | what it computes | time | cores busy |
 |---|---|---|---|
@@ -147,7 +147,7 @@ However, this is not so trivial when your dataset contains millions of rows divi
 
 If we are to solve this purely by intuition, the first thing that would naturally come to mind is to have every group sort use every single thread available whenever we have fewer groups than we have threads. For example, if we had 19 groups and 24 threads, instead of each thread getting its own group and five sitting idle, we could allow individual group sorts to parallelize across the extra thread capacity. This would be implemented using some kind of parallel sort logic like a merge sort or polars' own rayon-based parallel sorting.
 
-While this does work in simple cases, it is difficult to generalize and introduces a subtlety: what happens when a worker thread already running in parallel spawns its own sub-parallel sort? You get nested parallelism. This causes dozens of worker threads to begin tearing each other apart for the same physical 24 CPU cores; a state known as  oversubscription, which leads to constant context switching and erratic performance.
+While this does work in simple cases, it is difficult to generalize and introduces a subtlety: what happens when a worker thread already running in parallel spawns its own sub-parallel sort? The answer is you get nested parallelism. This causes dozens of worker threads to begin tearing each other apart for the same physical 24 CPU cores; a state known as  oversubscription, which leads to constant context switching and erratic performance.
 
 To fix this is to have the query engine answer one extra question: who am I?
 
