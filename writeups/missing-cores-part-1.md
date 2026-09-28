@@ -234,8 +234,6 @@ So the fix isn't smarter parallelism, but to stop creating 45 million column obj
 
 <span class="clock">Machine clock</span> The new shift gets through all 45 million groups in about eight seconds of one core. That's roughly 6 minutes per group, down from an hour. Still not free by all means, and there's even more performance to be squeezed out, but that's a story for another day.
 
-This fix isn't upstream yet. It waits on a design question a maintainer raised about the row-numbering fix, since both hook in at the same place.
-
 **Receipts**
 
 - Giving each decode thread its own regex: [pola-rs/polars#29411](https://github.com/pola-rs/polars/pull/29411)
