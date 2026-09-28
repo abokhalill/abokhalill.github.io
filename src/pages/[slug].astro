@@ -12,14 +12,36 @@ const { Content } = await render(entry);
 
 const base = import.meta.env.BASE_URL;
 const iso = entry.data.date.toISOString().slice(0, 10);
-const minutes = Math.max(1, Math.round(entry.body!.trim().split(/\s+/).length / 230));
+/*
+ * Reading time from what a reader actually reads: prose and table text, not
+ * markup. Counting raw markdown inflated it with HTML tags, table pipes, figure
+ * paths and code. ~230 wpm is measured adult silent reading of non-fiction
+ * (~238), nudged down for number-dense technical prose; figures and code lines
+ * get a flat allowance each, since they are studied rather than read.
+ */
+function readingMinutes(md: string) {
+	const code = md.match(/```[\s\S]*?```/g) ?? [];
+	const codeLines = code.join('\n').split('\n').filter((l) => l.trim() && !l.startsWith('```')).length;
+	const figures = (md.match(/!\[[^\]]*\]\([^)]*\)/g) ?? []).length;
+	const prose = md
+		.replace(/```[\s\S]*?```/g, ' ')
+		.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+		.replace(/<[^>]+>/g, ' ')
+		.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+		.replace(/^\|?[\s|:-]+\|?$/gm, ' ')
+		.replace(/[*_`#>|]/g, ' ');
+	const words = prose.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length;
+	const seconds = (words / 230) * 60 + figures * 12 + codeLines * 5;
+	return Math.max(1, Math.round(seconds / 60));
+}
+const minutes = readingMinutes(entry.body ?? '');
 ---
 
 <Base title={`${entry.data.title} — Yousef Mahmoud`} description={entry.data.dek} image={entry.data.image}>
 	<article>
 		<header class="head">
 			<p class="head__kicker">
-				Writeup · <time datetime={iso}>{iso}</time> · {minutes} min
+				<time datetime={iso}>{iso}</time> · {minutes} min
 			</p>
 			<h1 class="head__title">{entry.data.title}</h1>
 			<p class="head__dek">{entry.data.dek}</p>

@@ -96,7 +96,7 @@ for (const name of readdirSync(CONTENT).filter((f) => f.endsWith('.md'))) {
 	if (!fm.image || fm.draft === 'true') continue;
 	cards.push({
 		file: fm.image,
-		kicker: `Writeup &nbsp;·&nbsp; ${fm.date}`,
+		kicker: fm.date,
 		title: fm.title,
 		// Long titles need to come down a step to stay inside the card.
 		titleSize: fm.title.length > 90 ? 50 : 58,
