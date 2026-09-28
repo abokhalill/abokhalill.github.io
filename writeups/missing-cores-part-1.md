@@ -5,7 +5,7 @@ date: 2026-09-25
 image: og-missing-cores-part-1.png
 ---
 
-To kind of give you a present sense of the effects each of these findings had, we will run each one through three clocks.
+To give a tangible sense of what each finding means in practice, we’ll run every experiment through three clocks.
 
 <aside class="clocks">
 <dl>
@@ -19,7 +19,7 @@ To kind of give you a present sense of the effects each of these findings had, w
 <p>This is already intuitive to deduce, and it should go without saying, but every claim or finding in this writeup was measured with the exact setup and test machine listed.</p>
 </aside>
 
-It is easy to assume that an open source project or tool that is heavily optimized, especially one as fast as Polars, would likely mean that it has been profiled to death. But the truth is, high performance software is often where the most subtle inefficiencies take residence. To understand exactly where these inefficiencies lived, we need to first look at the skeletal diagram of Polars. You don’t need to be a core maintainer or developer of Polars. If you roughly know what a thread is and what a hash table does, you’ll be alright.
+It is easy to assume that an open source project or tool that is heavily optimized, especially one as fast as Polars, would likely mean that it has been profiled to death. But the truth is, high performance software is often where the most subtle inefficiencies take residence. To understand exactly where these inefficiencies lived, we need to first look at how Polars is put together. You don’t need to be a core maintainer or developer of Polars. If you roughly know what a thread is and what a hash table does, you’ll be alright.
 
 ## What is Polars?
 
@@ -27,11 +27,11 @@ Polars is a DataFrame library. Think of pandas, rebuilt from the ground up in Ru
 
 Polars actually has two execution engines. The older in-memory engine loads what it needs and works on it as a whole. The newer streaming engine pushes data through in batches. We will draw on this distinction more as we encounter it.
 
-**The workload.** In order to profile at all, we need to simulate an instance where Polars is actively utilizing the machine's resources to see where the bottleneck lies. That in mind, we used TPC-H, the industry's standard analytics benchmark. It models a made-up wholesaler with customers, orders, and the individual line items on each order. To control the amount of data we want to simulate, we set a scale factor. It is simply a multiplier that defines the total size of the test database and the number of rows in its tables (eg. SF10 = 10GBs of data). At scale factor 30, the `lineitem` table alone holds 180 million rows, and `orders` holds 45 million. You will often see query numbers like 6, 15, 22, etc. These are the TPC-H queries. Anything numbered higher is a custom probe that we designed to stress specific parts of the system.
+**The workload.** In order to profile at all, we need to simulate an instance where Polars is actively utilizing the machine's resources to see where the bottleneck lies. That in mind, we used TPC-H, the industry's standard analytics benchmark. It models a made-up wholesaler with customers, orders, and the individual line items on each order. To control the amount of data we want to simulate, we set a scale factor. It is simply a multiplier that defines the total size of the test database and the number of rows in its tables (eg. SF10 = 10GBs of data). At scale factor 30, the `lineitem` table alone holds 180 million rows, and `orders` holds 45 million.
 
 **The test machine.** An Intel Xeon Gold 5412U with 24 cores and 48 hardware threads, with turbo boost switched off. This isn't particularly all that important if you're just passively reading and do not care much about reproducing these numbers, but the machine ran with only 4 memory channels for the first half of the season and 8 for the second. You will sometimes see tables labeled with "8 channel machine" and other tables with "4 channel machine". Again, this isn't all that important but it's worth clarifying.
 
-**How to read the tables.** Every before-and-after comparison is a *paired A/B*: the unchanged build ("stock") and the modified build ("patched") run alternately, round after round. The purpose of this is to minimize bias, with each result accompanied by three numbers:
+**How to read the tables.** Every before and after comparison is a *paired A/B*: the unchanged build ("stock") and the modified build ("patched") run alternately, round after round. The purpose of this is to minimize bias, with each result accompanied by three numbers:
 
 - "6/6" means the patched build won all six rounds.
 - t is a t-statistic. Anything beyond roughly ±3 is far outside what is considered noise. For example, a t of about -64 should make you sit upright.
@@ -69,11 +69,11 @@ Give the same query 24 threads and follow the same row again. The search still t
 
 ![](/figures/fig1-regex-cycles-per-row.svg)
 
-It does not take a rocket scientist to notice the pattern depicted here. The time it takes to do the searching is exactly the same no matter the thread count. The threads are all waiting for each other to borrow the buffer.
+It does not take much to notice the pattern depicted here. The time it takes to do the searching is about the same no matter the thread count. The threads are all waiting for each other to borrow the buffer.
 
-<span class="clock">Design clock</span> The pool keeps one slot that needs no locking, and it reserves that slot for whichever thread used the regex first. Every other thread has to go through a mutex. So whichever lucky thread happens to win this race, the rest of the threads sit idle in a queue. The reason behind this design in the first place was that the pool was built around a regex that one thread owns and uses on its own. In that case, every borrow goes through the free slot and the mutex is never touched.
+<span class="clock">Design clock</span> The pool keeps one slot that needs no locking, and it reserves that slot for whichever thread used the regex first. Every other thread has to go through a mutex. So whichever lucky thread happens to win this race, the rest of the threads fight each other for the lock. The reason behind this design in the first place was that the pool was built around a regex that one thread owns and uses on its own. In that case, every borrow goes through the free slot and the mutex is never touched.
 
-The problem arises when Polars compiles one regex and hands that same object to every thread decoding the file. So again, in essence, one thread owns the pool while the twenty three siblings wait for it to release the mutex.
+The problem arises when Polars compiles one regex and hands that same object to every thread decoding the file. So again, in essence, one thread gets the free slot while the twenty three siblings fight each other for the mutex.
 
 But how can we even be sure that's what's happening? Well, the profiler practically confesses. The hottest function is `Pool::put_value`, the code that *returns* a borrowed buffer, and it only ever runs when the returning thread isn't the owner. If every thread had its own regex, that function wouldn't show up at all.
 
@@ -89,7 +89,7 @@ The fix is relatively straightforward: give each thread its own copy of the rege
 
 On the 8-channel machine, scaling jumped from 8.6x to 20.4x, while the single-thread time barely moved. This directly aligns with our previous hypothesis, which claimed that the owning thread always had the free lane, and so a correct fix *has* to change nothing at one thread and a lot at 24, which again, checks out.
 
-<span class="clock">Machine clock</span> Let's follow that same row one last time. At twenty-four threads, it used to cost about 15 minutes of thread time. With the patch now applied, it costs about 6. For comparison, the very same row costs about 5 minutes on a single thread, where there is nobody to wait on. In other words, the row is back to doing its own work and not much else.
+<span class="clock">Machine clock</span> Let's follow that same row one last time, this time on the 8-channel machine. At twenty-four threads, it used to cost about 15 minutes of thread time. With the patch now applied, it costs about 6. For comparison, the very same row costs about 5 minutes on a single thread, where there is nobody to wait on. In other words, the row is back to doing its own work and not much else.
 
 *(same method as the cycles table above)*
 
@@ -103,7 +103,7 @@ But the problem kind of already spells itself here. What about cores that are si
 
 This was how the regex bug was found. We changed the thread count, and watched how the profile moved. At one thread, zero time in the pool. At four, a third of it. At twenty-four, half. This was what triggered the so called investigation, which unfortunately no profiler can show.
 
-Running that same sweep across 45 queries led us to a second instrument. Linux's `perf stat` reports how many CPUs were actually utilized on average, split into two kinds of failures:
+Running that same sweep across 45 queries led us to a second instrument. Linux's `perf stat` reports how many CPUs were actually utilized on average, and that one number splits bad scaling into two kinds of failures:
 
 - **Busy cores, bad scaling.** The cores are working, but on wasted effort, that's the regex pool.
 - **Idle cores, bad scaling.** The work simply isn't there to do. As we just concluded, this looks completely clean on a profiler.
@@ -118,9 +118,11 @@ To demystify this next anomaly, a few terms are justified to be explained.
 
 Group / partition: It is simply a way to classify data into distinct piles before doing a calculation. 
 
-SQL window functions: A window function is an SQL feature used to compute something about each row relative to its group. An example would be `SUM() OVER ()` to sum or `ROW_NUMBER() OVER ()` to assign a unique index to each row number. 
+SQL window functions: A window function is an SQL feature used to compute something about each row relative to its group. An example would be `SUM() OVER (PARTITION BY ...)` to sum or `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)` to assign a unique index to each row number. 
 
 This now loaded into context, it is intuitive to guess that such functions are practically everywhere in analytics.
+
+Recall the two execution engines from earlier. Because the streaming engine lacks a native window operator, it hands the window step of any query over to the in-memory engine. Regardless of which engine you invoke, every window function in these benchmarks routes through the exact same in-memory pipeline, and that is precisely where the bottleneck is.
 
 <span class="clock">Wall clock</span> Here are two queries over the same 45 million orders and the same 180 million rows. The only difference between the two is an `order by` inside the window.
 
@@ -139,54 +141,54 @@ Once again, the disaster becomes immediately crystal. Asking for the rows *in or
 
 <span class="clock">Machine clock</span> There's another observation to be made here. If you tally the work across all 24 cores and split it per row, `SUM()` comes out to be about 12 minutes of dilated time. `ROW_NUMBER()` about 22. 
 
-But on the wall clock, a row comes out of the sum in just 30 seconds, and takes close to 10 minutes for row numbering. So if my math is correct, that should be about 1.8x the compute stalled behind a 19x latency wall. 22 of your cores simply clocked out.
+But on the wall clock, a row comes out of the sum in just 30 seconds, and takes close to 10 minutes for row numbering. That's about 1.9x the compute stalled behind a 19x latency wall. 22 of your cores simply clocked out.
 
 ### Few big groups
 
 <span class="clock">Design clock</span> When there are millions of small groups, Polars distributes the groups across available threads and sorts each group sequentially. Because there are millions of groups, there is plenty of work to go around, and so there will rarely be any time wasted where a thread at any moment isn't being utilized. We have a perfect balance of work distribution and parallelization.
 
-However, this is not so trivial when your dataset contains millions of rows divided into only a few groups. If we wanted for instance to have those 180M rows split into three groups of 60M rows, we would only have three threads clocked in for work. That is, each thread is sorting 60M rows alone. The rest of the twenty one threads would sit doing nothing. 
+However, this is not so trivial when your dataset contains millions of rows divided into only a few groups. If we wanted for instance to have those 180M rows split into three groups, we would only have three threads clocked in for work. That is, each thread is sorting tens of millions of rows alone. The rest of the twenty one threads would sit doing nothing. 
 
 If we are to solve this purely by intuition, the first thing that would naturally come to mind is to have every group sort use every single thread available whenever we have fewer groups than we have threads. For example, if we had 19 groups and 24 threads, instead of each thread getting its own group and five sitting idle, we could allow individual group sorts to parallelize across the extra thread capacity. This would be implemented using some kind of parallel sort logic like a merge sort or Polars' own Rayon-based parallel sorting.
 
-While this does work in simple cases, it is difficult to generalize and introduces a subtlety: what happens when a worker thread already running in parallel spawns its own sub-parallel sort? You get nested parallelism. This causes dozens of worker threads to begin tearing each other apart for the same physical 24 CPU cores; a state known as oversubscription, which leads to constant context switching and erratic performance.
+While this does work in simple cases, it introduces a subtlety: what happens when a sort that is already running inside parallel work spawns its own parallel sort? You get nested parallelism, and we found this out the hard way. The same sorting function turned out to have a second caller, one that sorts small sub-groups from inside work that's already spread across every thread. Our new rule kicked in there too, and a fifty group query that should never have been touched came in 11 to 18% slower in some rounds and unchanged in others. A plain slowdown doesn't flicker like that. The nested parallel sorts were the only thing that changed, and gating them made the flicker disappear.
 
 To fix this is to have the query engine answer one extra question: who am I?
 
 The sorting function is updated to accept an extra parameter: a boolean flag to indicate whether or not the caller is a top level caller owning the thread pool, or a nested child caller running inside an already parallelized worker thread. 
 
-If the caller is a top level parent, it passes `pool_is_free = true`. The sorting routine then checks this flag and sees that the 24 cores are genuinely idle. Having cleared the background check, it then expands the single group’s sort across all 24 threads using parallel algorithms such as Rayon. 
+If the caller is a top level parent, it passes `pool_is_free = true`. The sorting routine then checks this flag, along with whether there are fewer groups than threads. Having cleared the background check, it then lets the single group’s sort spread across the whole thread pool using Rayon’s parallel sort. 
 
 Likewise, if the caller is instead a nested child, then the flag passed is `false` and the background check fails. 
 
-It’s a simple yet elegant solution. For the two scenarios, whether or not we have few big groups or many nested sub sorts, we will either drop the execution time by a meaningful margin or we will have zero performance flicker. The many group query will stay rock solid flat, completely immune to oversubscription and unpredictable variance.
+It’s a simple yet elegant solution. For the two scenarios, whether or not we have few big groups or many nested sub sorts, we will either drop the execution time by a meaningful margin or leave it alone. The many group query should stay flat.
 
-<span class="clock">Wall clock</span> And so it did. With three groups, the query went from 20.4 seconds to 10.6, three rounds consecutively: -48.1%, -48.3%, -48.1%. The machine went from about 3 cores busy to about 7. A fifty group query, one that would have resulted in skewed metrics, stayed flat.
+<span class="clock">Wall clock</span> And so it did. With three groups, the query went from 20.4 seconds to 10.6, three rounds consecutively: -48.1%, -48.3%, -48.1%. The machine went from about 3 cores busy to about 7. The fifty group query, the one that used to flicker, stayed flat.
 
 | 8-channel machine | before | after | change |
 |---|---|---|---|
 | 3 groups | 20,402 ms | 10,557 ms | -48.1%, -48.3%, -48.1% |
 | 50 groups | | | flat |
 
-So why only seven cores and not the full twenty-four? Honestly, we have no idea yet. The seven cores is an average over the whole query. In other words, if there's anything else that is still running on one single core, that would be what is causing the number to be dragged down because it's not being distributed over the whole 24 cluster.
-
 <span class="clock">Machine clock</span> Spread over all 180 million rows, that's about 4 minutes of waiting per row before the fix, and about 2 after.
+
+So why only seven cores and not the full twenty-four? Honestly, we have no idea yet. The seven cores is an average over the whole query. In other words, if there's anything else that is still running on one single core, that would be what is causing the number to be dragged down because it's not being distributed over the whole 24 cluster.
 
 ### Many tiny groups
 
 Now the other extreme: 45 million groups, about four rows each.
 
-<span class="clock">Wall clock</span> The ordered query from earlier, the one that numbers the rows within each order, takes 50.7 seconds. And for 41 of those seconds, exactly one core is doing anything at all.
+<span class="clock">Wall clock</span> The ordered query from earlier, the one that numbers the rows within each order, takes around 50 seconds. And for 41 of those seconds, exactly one core is doing anything at all.
 
 Once again, this is phase timing in motion, which shows that exactly one core is active from t=6s to t=47s. A profile of just that window finally uncovers the mystery: 74.67% of the time sits inside a generic fallback routine, all of it on a single thread.
 
-<span class="clock">Machine clock</span> 45 million groups of about four rows, in roughly forty seconds on one core. That works out to about half an hour of dilated time per four-row group. Half an hour, to count to four. Ironically, most of this time is not even dedciated to anything analytical, it's just constant memory allocation and freeing due to the millions of tiny groups.
+<span class="clock">Machine clock</span> 45 million groups of about four rows, in roughly forty seconds on one core. That works out to about half an hour of dilated time per four-row group. Half an hour, to count to four. Ironically, most of this time is not even dedciated to anything analytical, it's just building, copying and freeing tiny column objects, over and over, once per group.
 
-<span class="clock">Design clock</span> Polars’ SQL layer implements `ROW_NUMBER()` with naive simplicity: generate a range from 0 to the group's length, then add 1. But because range-building lacked a dedicated per-group path, the query planner defaulted to its general purpose fallback.
+<span class="clock">Design clock</span> Polars’ SQL layer implements `ROW_NUMBER()` in the simplest way possible: generate a range from 0 to the group's length, then add 1. But because range-building lacked a dedicated per group path, execution fell back to a general purpose path.
 
-This fallback processes all 45 million groups one by one: wrap the input into a standalone, heap-allocated `Series` object, invoke the function, extract the result, and discard the wrapper. For an obscure utility function, it could be argued that this overhead is somewhat reasonable. The flaw, of course, is that `ROW_NUMBER()` is anything but rarely used.
+This fallback processes all 45 million groups sequentially. That is, wrap the input into a standalone, heap allocated `Series` object, invoke the function, extract the result, and discard the wrapper. For an obscure utility function, it could be argued that this overhead is somewhat reasonable. The flaw, of course, is that `ROW_NUMBER()` is anything but rarely used.
 
-The solution? A dedicated per-group version that builds every group's range into one output in a single pass, with the same results and the same error messages in the same order.
+The solution? A dedicated per group version that builds every group's range into one output in a single pass, with the same results and the same error messages in the same order.
 
 | 4-channel machine | before | after | change |
 |---|---|---|---|
@@ -204,17 +206,15 @@ To verify, we checked three things. A checksum over all 179,998,372 rows came ou
 
 ### LAG, LEAD, and the atomic nobody invited
 
-<span class="clock">Wall clock</span> `LAG(price)` means "the previous row's price, within this group." On 45 million groups, it runs for 88.6 seconds at 1.71 cores. Anything look particularly familiar? It's the exact same generic fallback as before.
+<span class="clock">Wall clock</span> `LAG(price)` means "the previous row's price, within this group." On 45 million groups, it runs for 88.6 seconds at 1.71 cores. 
+
+Anything look particularly familiar? 
 
 <span class="clock">Machine clock</span> Eighty seconds of one core over 45M groups works out to about an hour of dilated time per four-row group. That's twice as bad as row numbering. And inside that hour, 16.6% goes to converting the "how many rows back" number into the right type. The same number, forty-five million times over.
 
-So the obvious question is: why fix one function when you could fix them all? Make the generic fallback loop run in parallel, and every function that relies on it speeds up at once. We built exactly that, and it halved the time.
+But this gives way to a new rhetorical question: why fix one function when you could fix them all? Make the generic fallback loop run in parallel, and every function that relies on it speeds up at once. Well, we did, and it halved the time. But it also.. stopped at ten cores?
 
-Then it stopped dead at ten cores.
-
-Here's the thing though: every group's input is a slice of *one* shared data buffer. Rust tracks who's using a shared buffer with a reference count, a counter that goes up when someone takes a slice and down when they let it go. Every slice is an increment. Every release is a decrement. One counter, twenty-four cores.
-
-And this is where the hardware bites. Each core has its own cache, which works in 64-byte chunks called cache lines. When two cores write to the same cache line, the hardware has to shuttle that line back and forth between them. Only one core can hold it at a time, and every hand-off costs time.
+There's a rather beautiful realization here, which is that every group's input is a slice of *one* shared data buffer. Rust tracks who's using a shared buffer with a reference count, a counter that goes up when someone takes a slice and down when they let it go. One counter, twenty-four cores. And every time a core touches that counter, it first has to pull the 64-byte chunk of memory holding it, away from whichever core touched it last. In systems terms, this is referred to as cache line ping-ponging.
 
 | where the parallel version spent its time | share |
 |---|---|
@@ -222,24 +222,26 @@ And this is where the hardware bites. Each core has its own cache, which works i
 | creating slices | 26.66% |
 | copying slices | 12.84% |
 
-Two thirds of the parallel phase was one cache line bouncing between cores. It's the regex pool all over again, just in a new costume.
+Two thirds of the parallel phase was one cache line bouncing between cores. Regex pool all over again.
 
-<span class="clock">Design clock</span> A shared reference count is exactly right for a buffer with a handful of users. It was never meant for 45 million short-lived slices across 24 cores. Nobody got this wrong. The workload simply outgrew the design.
+<span class="clock">Design clock</span> A shared reference count is pretty much the right tool for a buffer with a handful of users. However, for 45 million short lived slices across 24 cores, the hardware contention makes it a bottleneck. 
 
-So the fix isn't smarter parallelism. It's not creating 45 million column objects in the first place. Convert "how many rows back" once, then compute every group's shifted positions in a single pass.
+So the fix isn't smarter parallelism, but to stop creating 45 million column objects in the first place. That is, convert "how many rows back" once, then compute every group's shifted positions in a single pass.
 
 <span class="clock">Wall clock</span> Paired, round after round, 89.2 seconds came down to 19.4. That's -78.22%, four rounds out of four. And the output checks itself: `LAG()` should leave exactly one empty value per order, and it does.
 
 ![](/figures/fig3-lag-timeline.svg)
 
-<span class="clock">Machine clock</span> The new shift gets through all 45 million groups in about eight seconds of one core. That's roughly 6 minutes per group, down from an hour. Still not free, and there's a clear way to make it cheaper, but that's a story for another day.
+<span class="clock">Machine clock</span> The new shift gets through all 45 million groups in about eight seconds of one core. That's roughly 6 minutes per group, down from an hour. Still not free by all means, and there's even more performance to be squeezed out, but that's a story for another day.
 
 This fix isn't upstream yet. It waits on a design question a maintainer raised about the row-numbering fix, since both hook in at the same place.
 
-Did it work? Every checksum said yes. Every hand-picked test said yes. A 410-case battery comparing both builds said no. In one unusual shape of query, the old code returned one value per group and ours returned a list. We fixed it, re-ran the battery, and both builds matched.
+**Receipts**
 
-The query got 4.6x faster. Believing it was still right took a battery of 410 cases.
+- Giving each decode thread its own regex: [pola-rs/polars#29411](https://github.com/pola-rs/polars/pull/29411)
+- Letting a few big groups sort in parallel: [pola-rs/polars#29433](https://github.com/pola-rs/polars/pull/29433) (under review)
+- Building every group's range in one pass: [pola-rs/polars#29537](https://github.com/pola-rs/polars/pull/29537) (under review)
 
 ---
 
-*Next in the series: Twelve seconds at a time, where a single core spends 17% of a query waiting on bytes it wrote a moment earlier, and three small patches that give most of it back.*
+*Next in the series: Twelve seconds at a time, where a single core spends 17% of a query waiting on bytes it wrote a moment earlier.*
